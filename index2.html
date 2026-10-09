@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Enterprise Catastrophe Risk Screening Engine</title>
+  
+  <!-- Load Authoritative ArcGIS Framework Libraries --> 
+  <link rel="stylesheet" href="https://js.arcgis.com/4.28/esri/themes/light/main.css" />
+  <script src="https://js.arcgis.com/4.28/"></script>
+  
+  <style>
+    html, body { padding: 0; margin: 0; height: 100%; width: 100%; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; flex-direction: column; background-color: #f4f6f9; }
+    #mainWorkspace { display: flex; flex: 1; position: relative; height: 70%; min-height: 400px; }
+    #viewDiv { flex: 1; height: 100%; width: 100%; }
+    
+    /* Control Panel Layout styling */
+    #controlPanel { 
+      position: absolute; top: 20px; left: 20px; background: rgba(255,255,255,0.98); 
+      padding: 18px; z-index: 99; border-radius: 8px; width: 320px; max-height: 85%;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15); overflow-y: auto; border: 1px solid #dcdfe6;
+    }
+    
+    h3 { margin-top: 0; color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 6px; font-size: 16px; }
+    h4 { margin: 12px 0 6px 0; color: #34495e; font-size: 13px; }
+    button { width: 100%; padding: 8px 10px; margin-bottom: 6px; cursor: pointer; font-weight: bold; border-radius: 4px; font-size: 12px; transition: all 0.2s; }
+    select, input[type="text"] { width: 93%; padding: 8px; border: 1px solid #dcdfe6; border-radius: 4px; font-size: 12px; margin-bottom: 8px; }
+    
+    .hazard-row { background: #f8f9fa; padding: 10px; border-radius: 4px; margin-bottom: 8px; border-left: 4px solid #ccc; }
+    .slider-container { margin-top: 6px; display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: #606266; }
+    
+    .drawing-tools-container {
+      display: none; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 8px; background: #ebf5ff; padding: 6px; border-radius: 4px; border: 1px solid #b3d8ff;
+    }
+    .drawing-tools-container button { margin-bottom: 0; padding: 6px; font-size: 11px; background: #ffffff; color: #409eff; border: 1px solid #b3d8ff; }
+    .drawing-tools-container button:hover { background: #409eff; color: white; }
+
+    /* Attribute Table panel styling */
+    #tableContainer { height: 30%; width: 100%; background: #ffffff; border-top: 3px solid #b3c0d1; z-index: 10; display: none; }
+    #tableHeader { background: #eaedf1; padding: 8px 16px; font-size: 12px; font-weight: bold; color: #475669; border-bottom: 1px solid #d3dce6; display: flex; justify-content: space-between; }
+    
+    #stats { font-size: 12px; margin-top: 10px; padding: 8px; border-radius: 4px; background: #ecf5ff; color: #409eff; font-weight: 500; line-height: 1.4; }
+  </style>
+</head>
+<body>
+
+  <!-- Top Segment Map Framework Workspace --> 
+  <div id="mainWorkspace">
+    <div id="controlPanel">
+      <h3>Catastrophe Risk Engine</h3>
+      
+      <!-- Manual drawing tool controllers --> 
+      <button id="drawMenuToggleBtn" style="background:#3498db; color:white; border:none;">✏️ Draw Custom Boundary</button>
+      
+      <div id="drawingTools" class="drawing-tools-container">
+        <button id="drawFreehandBtn">🎨 Freehand</button>
+        <button id="drawPolygonBtn">📐 Polygon</button>
+        <button id="drawRectangleBtn">⬜ Rectangle</button>
+        <button id="drawCircleBtn">⚪ Circle</button>
+      </div>
+
+      <button id="clearBtn" style="background:#909399; color:white; border:none;">🔄 Reset Workspace</button>
+      
+      <!-- Symbology Customization Selector --> 
+      <h4>Portfolio Symbology</h4>
+      <select id="symbologySelect">
+        <option value="uniform">Uniform Crimson Markers</option>
+        <option value="proportional">Size Proportional to TIV</option>
+        <option value="tiers">Color Categories by Value Tiers</option>
+      </select>
+      
+      <!-- US Fire & Storm System Toggles --> 
+      <h4>Authoritative Peril Layers</h4>
+      
+      <!-- WFIGS Progression Suite Container --> 
+      <div class="hazard-row" style="border-left-color: #e6a23c;">
+        <label style="font-weight: bold; font-size: 12px; cursor:pointer;">
+          <input type="checkbox" id="wildfireCheck" checked> Wildfire Progression Suite
+        </label>
+        <div class="slider-container">
+          <span>Opacity:</span>
+          <input type="range" id="wildfireOpacity" min="0" max="1" step="0.1" value="0.8" style="width:70%;">
+        </div>
+        <button id="refreshLiveWildfireBtn" style="background:#e6a23c; color:white; border:none; margin-top:6px;">🔄 Refresh Live Feed</button>
+        <div style="font-size: 10px; color: #909399; margin-top: 4px;">Shows Live (Red), 24h (Orange), & 48h (Yellow) perimeters. Auto-refreshes daily.</div>
+      </div>
+      
+      <!-- NWS Archive Warning Container --> 
+      <div class="hazard-row" style="border-left-color: #f56c6c;">
+        <label style="font-weight: bold; font-size: 12px; cursor:pointer;">
+          <input type="checkbox" id="convectiveCheck"> 48h Severe Convective Archive
+        </label>
+        <div class="slider-container">
+          <span>Opacity:</span>
+          <input type="range" id="convectiveOpacity" min="0" max="1" step="0.1" value="0.7" style="width:70%;">
+        </div>
+        <div style="font-size: 10px; color: #909399; margin-top: 4px;">Accumulates Tornado & Severe Thunderstorm paths.</div>
+      </div>
+      
+      <!-- Dynamic Paste URL Verification Tool --> 
+      <h4>Load Custom Secure Layer</h4>
+      <input type="text" id="customUrlInput" placeholder="https://.../FeatureServer/0" />
+      <button id="loadCustomLayerBtn" style="background:#e6a23c; color:white; border:none;">🔌 Connect Secure URL</button>
+      
+      <!-- Excel Action Interface --> 
+      <button id="exportBtn" style="background:#67c23a; color:white; border:none; margin-top:10px; opacity:0.5;" disabled>📥 Export Results to Excel</button>
+      
+      <div id="stats">System ready. Draw a perimeter or select a hazard record row to initiate asset mapping.</div>
+    </div>
+    
+    <div id="viewDiv"></div>
+  </div>
+
+  <!-- Bottom Segment Spreadsheet Grid Container --> 
+  <div id="tableContainer">
+    <div id="tableHeader">
+      <span>📊 Hazard Feature Specification Grid: <span id="activeTableName" style="color:#3498db;">None Active</span></span>
+      <span style="font-size: 11px; font-weight: normal; color: #909399;">Selecting a row automates portfolio exposure queries.</span>
+    </div>
+    <div id="featureTableElement" style="height: calc(100% - 32px); width: 100%;"></div>
+  </div>
+
+  <!-- JavaScript Application Script Workspace --> 
+  <script>
+    require([
+      "esri/Map",
+      "esri/views/MapView",
+      "esri/layers/FeatureLayer",
+      "esri/Graphic",
+      "esri/widgets/Sketch/SketchViewModel",
+      "esri/widgets/FeatureTable",
+      "esri/geometry/geometryEngine",
+      "esri/layers/Layer"
+    ], function(Map, MapView, FeatureLayer, Graphic, SketchViewModel, FeatureTable, geometryEngine, Layer) {
+
+      let activePolygonGeoJSON = null;
+      let activeTableWidget = null;
+      let enrichedPropertiesForExport = [];
+
+      const WFIGS_SERVICE_URL = "https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Interagency_Perimeters/FeatureServer/0";
+
+      // --- 1. Portfolio Render Templates Configuration ---
+      const uniformRenderer = {
+        type: "simple",
+        symbol: { type: "simple-marker", color: "#d9534f", size: "8px", outline: { color: "white", width: 1 } }
+      };
+
+      const proportionalRenderer = {
+        type: "simple",
+        symbol: { type: "simple-marker", color: "#2c3e50", outline: { color: "white", width: 1 } },
+        visualVariables: [{
+          type: "size", field: "tiv",
+          minDataValue: 1000000, maxDataValue: 100000000,
+          minSize: "6px", maxSize: "28px"
+        }]
+      };
+
+      const tieredRenderer = {
+        type: "class-breaks", field: "tiv",
+        defaultSymbol: { type: "simple-marker", color: "gray", size: "8px" },
+        classBreakInfos: [
+          { minValue: 0, maxValue: 10000000, symbol: { type: "simple-marker", color: "#5cb85c", size: "9px" } },
+          { minValue: 10000001, maxValue: 50000000, symbol: { type: "simple-marker", color: "#f0ad4e", size: "12px" } },
+          { minValue: 50000001, maxValue: 9999999999, symbol: { type: "simple-marker", color: "#d9534f", size: "16px" } }
+        ]
+      };
+
+      // --- 2. Initialize Property Memory Storage Layer ---
+      const propertyLayer = new FeatureLayer({
+        source: [], objectIdField: "id",
+        fields: [
+          { name: "id", type: "integer" }, { name: "latitude", type: "double" },
+          { name: "longitude", type: "double" }, { name: "tiv", type: "double" },
+          { name: "policy_number", type: "string" }
+        ],
+        renderer: uniformRenderer,
+        popupTemplate: { title: "Policy: {policy_number}", content: "<b>Total Insured Value (TIV):</b> ${tiv}" }
+      });
+
+      // --- 3. Establish Historical Timestamp SQL Matrices ---
+      function getPastDateString(hoursAgo) {
+        const d = new Date();
+        d.setHours(d.getHours() - hoursAgo);
+        return d.toISOString().replace('T', ' ').substring(0, 19);
+      }
+
+      // --- 4. Initialize Environmental Peril Feeds ---
+      const liveWildfires = new FeatureLayer({
+        url: WFIGS_SERVICE_URL,
+        refreshInterval: 5, visible: true, title: "Current Active Wildfires",
+        symbol: { type: "simple-fill", color: [245, 108, 108, 0.4], outline: { color: "#f56c6c", width: 2 } }
+      });
+
+      const wildfires24h = new FeatureLayer({
+        url: WFIGS_SERVICE_URL,
+        visible: true, title: "Wildfires 24h Ago",
+        definitionExpression: `PolygonDateTime <= '${getPastDateString(24)}'`,
+        symbol: { type: "simple-fill", color: [230, 162, 60, 0.3], outline: { color: "#e6a23c", width: 1.5, style: "dash" } }
+      });
+
+      const wildfires48h = new FeatureLayer({
+        url: WFIGS_SERVICE_URL,
+        visible: true, title: "Wildfires 48h Ago",
+        definitionExpression: `PolygonDateTime <= '${getPastDateString(48)}'`,
+        symbol: { type: "simple-fill", color: [144, 147, 153, 0.2], outline: { color: "#909399", width: 1, style: "dot" } }
+      });
+
+      // Daily Scheduled Refresh Routine for 24h & 48h Wildfire Layers
+      function scheduleHistoricalWildfiresDailyRefresh() {
+        wildfires24h.definitionExpression = `PolygonDateTime <= '${getPastDateString(24)}'`;
+        wildfires48h.definitionExpression = `PolygonDateTime <= '${getPastDateString(48)}'`;
+        wildfires24h.refresh();
+        wildfires48h.refresh();
+
+        const now = new Date();
+        const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 5);
+        const timeUntilMidnight = tomorrow - now;
+
+        setTimeout(() => {
+          scheduleHistoricalWildfiresDailyRefresh();
+        }, timeUntilMidnight);
+      }
+      scheduleHistoricalWildfiresDailyRefresh();
+
+      const stormWarningArchive48h = new FeatureLayer({
+        url: "https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/NWS_Watches_Warnings_Advisories_Archive/FeatureServer/0",
+        refreshInterval: 10, visible: false, title: "48h Severe Convective Warnings Archive",
+        definitionExpression: `EVENT IN ('Severe Thunderstorm Warning', 'Tornado Warning') AND ISSUED >= '${getPastDateString(48)}'`,
+        outFields: ["*"],
+        popupTemplate: { title: "{EVENT}", content: "<b>Issued:</b> {ISSUED}<br/><b>Expired:</b> {ENDED}" }
+      });
+
+      const sketchLayer = new FeatureLayer({ source: [], objectIdField: "id", fields: [{ name: "id", type: "integer" }] });
+
+      // --- 5. Assemble Core Map Engine Instance ---
+      const map = new Map({
+        basemap: "gray-vector",
+        layers: [wildfires48h, wildfires24h, liveWildfires, stormWarningArchive48h, sketchLayer]
+      });
+
+      const view = new MapView({
+        container: "viewDiv", map: map, zoom: 4, center: [-98, 39]
+      });
+
+      map.add(propertyLayer);
+
+      const sketchViewModel = new SketchViewModel({
+        view: view, layer: sketchLayer,
+        polygonSymbol: { type: "simple-fill", color: [52, 152, 219, 0.15], outline: { color: "#3498db", width: 2 } }
+      });
+
+      // Initialize attribute table for live wildfires on start
+      initializeAttributeTable(liveWildfires);
+
+      // --- 6. Pipeline Request Action Engine (Database Query) ---
+      function queryPrivateDatabase(geoJsonGeometry, rawEsriGeometry) {
+        document.getElementById("stats").innerHTML = "Executing secure lookup against millions of records...";
+        activePolygonGeoJSON = geoJsonGeometry;
+
+        setTimeout(() => {
+          const mockServerResponse = [
+            {"id": 1, "latitude": view.center.latitude + 0.1, "longitude": view.center.longitude - 0.1, "tiv": 85000000, "policy_number": "POL-CA-992"},
+            {"id": 2, "latitude": view.center.latitude - 0.1, "longitude": view.center.longitude + 0.1, "tiv": 42000000, "policy_number": "POL-TX-104"},
+            {"id": 3, "latitude": view.center.latitude + 0.05, "longitude": view.center.longitude + 0.05, "tiv": 9500000, "policy_number": "POL-FL-551"}
+          ];
+
+          document.getElementById("stats").innerHTML = `Match successful. Displaying top <b>${mockServerResponse.length}</b> exposed locations sorted by TIV.`;
+
+          propertyLayer.removeAll();
+
+          const localFeatures = mockServerResponse.map(loc => {
+            return new Graphic({
+              geometry: { type: "point", longitude: loc.longitude, latitude: loc.latitude },
+              attributes: loc
+            });
+          });
+
+          propertyLayer.applyEdits({ addFeatures: localFeatures }).then(() => {
+            performClientSideSpatialJoin(localFeatures, rawEsriGeometry);
+          });
+        }, 800);
+      }
+
+      // --- 7. Enriched Spatial Join Processing Engine ---
+      function performClientSideSpatialJoin(propertyGraphics, evaluationBoundary) {
+        document.getElementById("stats").innerHTML += "<br/>Calculating hazard overlap intersections...";
+
+        const query = stormWarningArchive48h.createQuery();
+        query.geometry = evaluationBoundary;
+        query.outFields = ["EVENT", "ISSUED"];
+
+        stormWarningArchive48h.queryFeatures(query).then(function(hazardResults) {
+          const hazards = hazardResults.features;
+
+          enrichedPropertiesForExport = propertyGraphics.map(prop => {
+            let overlayThreat = "No Active Warnings Detected";
+            hazards.forEach(hazard => {
+              if (geometryEngine.contains(hazard.geometry, prop.geometry)) {
+                overlayThreat = hazard.attributes.EVENT + " (Issued: " + hazard.attributes.ISSUED + ")";
+              }
+            });
+
+            return {
+              ...prop.attributes,
+              Exposed_Hazard_Context: overlayThreat
+            };
+          });
+
+          const exportBtn = document.getElementById("exportBtn");
+          exportBtn.disabled = false;
+          exportBtn.style.opacity = "1";
+          document.getElementById("stats").innerHTML += "<br/>Excel download payload compiled successfully.";
+        });
+      }
+
+      // --- 8. Dynamic Interactive Attribute Spreadsheet Component ---
+      function initializeAttributeTable(targetLayer) {
+        const tableContainer = document.getElementById("tableContainer");
+        const activeNameLabel = document.getElementById("activeTableName");
+
+        if (activeTableWidget) { activeTableWidget.destroy(); }
+
+        tableContainer.style.display = "block";
+        activeNameLabel.innerText = targetLayer.title || "Custom Data Feed Service";
+
+        activeTableWidget = new FeatureTable({
+          layer: targetLayer, view: view, container: "featureTableElement", highlightOnRowSelect: true
+        });
+
+        activeTableWidget.on("selection-change", (event) => {
+          if (event.added.length > 0) {
+            const selectedObjectId = event.added[0].objectId;
+            targetLayer.queryFeatures({
+              objectIds: [selectedObjectId], returnGeometry: true, outFields: ["*"]
+            }).then(function(result) {
+              if (result.features.length > 0) {
+                const selectedGeom = result.features[0].geometry;
+                view.goTo(selectedGeom.extent.expand(1.6));
+                queryPrivateDatabase(selectedGeom.toJSON(), selectedGeom);
+              }
+            });
+          }
+        });
+      }
+
+      // --- 9. Dynamic UI Interaction Listeners ---
+
+      // Drawing Tool Controls & Handlers
+      const drawingToolsDiv = document.getElementById("drawingTools");
+      
+      document.getElementById("drawMenuToggleBtn").addEventListener("click", () => {
+        drawingToolsDiv.style.display = drawingToolsDiv.style.display === "grid" ? "none" : "grid";
+      });
+
+      function startDrawingTool(toolType) {
+        propertyLayer.removeAll();
+        sketchLayer.removeAll();
+        document.getElementById("exportBtn").disabled = true;
+        document.getElementById("exportBtn").style.opacity = "0.5";
+        sketchViewModel.create(toolType);
+        document.getElementById("stats").innerHTML = `Drawing active: Use <b>${toolType}</b> tool on map...`;
+      }
+
+      document.getElementById("drawFreehandBtn").addEventListener("click", () => startDrawingTool("freehandPolygon"));
+      document.getElementById("drawPolygonBtn").addEventListener("click", () => startDrawingTool("polygon"));
+      document.getElementById("drawRectangleBtn").addEventListener("click", () => startDrawingTool("rectangle"));
+      document.getElementById("drawCircleBtn").addEventListener("click", () => startDrawingTool("circle"));
+
+      sketchViewModel.on("create", function(evt) {
+        if (evt.state === "complete") {
+          queryPrivateDatabase(evt.graphic.geometry.toJSON(), evt.graphic.geometry);
+        }
+      });
+
+      document.getElementById("clearBtn").addEventListener("click", () => {
+        sketchLayer.removeAll();
+        propertyLayer.removeAll();
+        activePolygonGeoJSON = null;
+        enrichedPropertiesForExport = [];
+        document.getElementById("exportBtn").disabled = true;
+        document.getElementById("exportBtn").style.opacity = "0.5";
+        document.getElementById("tableContainer").style.display = "none";
+        if (activeTableWidget) { activeTableWidget.destroy(); activeTableWidget = null; }
+        document.getElementById("stats").innerHTML = "Workspace reset complete. Configuration baseline initialized.";
+      });
+
+      document.getElementById("symbologySelect").addEventListener("change", (e) => {
+        const mode = e.target.value;
+        if (mode === "uniform") propertyLayer.renderer = uniformRenderer;
+        if (mode === "proportional") propertyLayer.renderer = proportionalRenderer;
+        if (mode === "tiers") propertyLayer.renderer = tieredRenderer;
+        propertyLayer.refresh();
+      });
+
+      // On-Demand Manual Live Wildfire Refresh Button Listener
+      document.getElementById("refreshLiveWildfireBtn").addEventListener("click", () => {
+        liveWildfires.refresh();
+        wildfires24h.refresh();
+        wildfires48h.refresh();
+        document.getElementById("stats").innerHTML = "Wildfire REST service layers successfully re-queried and refreshed.";
+      });
+
+      // --- Peril Toggles & Opacity Range Bindings ---
+      document.getElementById("wildfireCheck").addEventListener("change", (e) => {
+        const vis = e.target.checked;
+        liveWildfires.visible = vis;
+        wildfires24h.visible = vis;
+        wildfires48h.visible = vis;
+        if(vis) { initializeAttributeTable(liveWildfires); }
+      });
+
+      document.getElementById("wildfireOpacity").addEventListener("input", (e) => {
+        const val = parseFloat(e.target.value);
+        liveWildfires.opacity = val; wildfires24h.opacity = val * 0.7; wildfires48h.opacity = val * 0.4;
+      });
+
+      document.getElementById("convectiveCheck").addEventListener("change", (e) => {
+        stormWarningArchive48h.visible = e.target.checked;
+        if(e.target.checked) { initializeAttributeTable(stormWarningArchive48h); }
+      });
+
+      document.getElementById("convectiveOpacity").addEventListener("input", (e) => {
+        stormWarningArchive48h.opacity = parseFloat(e.target.value);
+      });
+
+      // --- Secure Pasted URL Loader ---
+      document.getElementById("loadCustomLayerBtn").addEventListener("click", () => {
+        const urlStr = document.getElementById("customUrlInput").value.trim();
+
+        if (!urlStr.toLowerCase().startsWith("https://")) {
+          document.getElementById("stats").innerHTML = "⚠️ Connection Refused: Insecure URL protocol. Layer access requires 'https://' encryption keys.";
+          return;
+        }
+
+        document.getElementById("stats").innerHTML = "Connecting to secure network map service directory...";
+
+        Layer.fromArcGISServerUrl({ url: urlStr }).then(function(customLayer) {
+          map.add(customLayer, 0);
+          document.getElementById("stats").innerHTML = "Custom dynamic REST data layer successfully linked to workspace.";
+          if(customLayer.type === "feature") { initializeAttributeTable(customLayer); }
+        }).catch(function(err){
+          document.getElementById("stats").innerHTML = "Link validation error. Confirm CORS configurations allow resource connections.";
+        });
+      });
+
+      // --- CSV/Excel Export Trigger ---
+      document.getElementById("exportBtn").addEventListener("click", () => {
+        if(enrichedPropertiesForExport.length === 0) return;
+        document.getElementById("stats").innerHTML = "Packaging secure consolidated asset ledger data...";
+
+        let csvContent = "data:text/csv;charset=utf-8,Policy Number,Latitude,Longitude,TIV,Exposed Catastrophe Overlay\n";
+
+        enrichedPropertiesForExport.forEach(row => {
+          csvContent += `${row.policy_number},${row.latitude},${row.longitude},${row.tiv},"${row.Exposed_Hazard_Context}"\n`;
+        });
+
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", `Catastrophic_Exposure_Report_${new Date().toISOString().split('T')[0]}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        document.getElementById("stats").innerHTML = "Data extraction document successfully downloaded to host file ledger.";
+      });
+
+    });
+  </script>
+</body>
+</html>
