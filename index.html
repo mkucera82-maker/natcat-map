@@ -16,18 +16,24 @@
     /* Control Panel Layout styling */
     #controlPanel { 
       position: absolute; top: 20px; left: 20px; background: rgba(255,255,255,0.98); 
-      padding: 18px; z-index: 99; border-radius: 8px; width: 300px; max-height: 85%;
+      padding: 18px; z-index: 99; border-radius: 8px; width: 320px; max-height: 85%;
       box-shadow: 0 4px 20px rgba(0,0,0,0.15); overflow-y: auto; border: 1px solid #dcdfe6;
     }
     
     h3 { margin-top: 0; color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 6px; font-size: 16px; }
     h4 { margin: 12px 0 6px 0; color: #34495e; font-size: 13px; }
-    button { width: 100%; padding: 10px; margin-bottom: 8px; cursor: pointer; font-weight: bold; border-radius: 4px; font-size: 12px; transition: all 0.2s; }
+    button { width: 100%; padding: 8px 10px; margin-bottom: 6px; cursor: pointer; font-weight: bold; border-radius: 4px; font-size: 12px; transition: all 0.2s; }
     select, input[type="text"] { width: 93%; padding: 8px; border: 1px solid #dcdfe6; border-radius: 4px; font-size: 12px; margin-bottom: 8px; }
     
-    .hazard-row { background: #f8f9fa; padding: 8px; border-radius: 4px; margin-bottom: 8px; border-left: 4px solid #ccc; }
+    .hazard-row { background: #f8f9fa; padding: 10px; border-radius: 4px; margin-bottom: 8px; border-left: 4px solid #ccc; }
     .slider-container { margin-top: 6px; display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: #606266; }
     
+    .drawing-tools-container {
+      display: none; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 8px; background: #ebf5ff; padding: 6px; border-radius: 4px; border: 1px solid #b3d8ff;
+    }
+    .drawing-tools-container button { margin-bottom: 0; padding: 6px; font-size: 11px; background: #ffffff; color: #409eff; border: 1px solid #b3d8ff; }
+    .drawing-tools-container button:hover { background: #409eff; color: white; }
+
     /* Attribute Table panel styling */
     #tableContainer { height: 30%; width: 100%; background: #ffffff; border-top: 3px solid #b3c0d1; z-index: 10; display: none; }
     #tableHeader { background: #eaedf1; padding: 8px 16px; font-size: 12px; font-weight: bold; color: #475669; border-bottom: 1px solid #d3dce6; display: flex; justify-content: space-between; }
@@ -43,7 +49,15 @@
       <h3>Catastrophe Risk Engine</h3>
       
       <!-- Manual drawing tool controllers --> 
-      <button id="drawBtn" style="background:#3498db; color:white; border:none;">✏️ Draw Custom Boundary</button>
+      <button id="drawMenuToggleBtn" style="background:#3498db; color:white; border:none;">✏️ Draw Custom Boundary</button>
+      
+      <div id="drawingTools" class="drawing-tools-container">
+        <button id="drawFreehandBtn">🎨 Freehand</button>
+        <button id="drawPolygonBtn">📐 Polygon</button>
+        <button id="drawRectangleBtn">⬜ Rectangle</button>
+        <button id="drawCircleBtn">⚪ Circle</button>
+      </div>
+
       <button id="clearBtn" style="background:#909399; color:white; border:none;">🔄 Reset Workspace</button>
       
       <!-- Symbology Customization Selector --> 
@@ -60,13 +74,14 @@
       <!-- WFIGS Progression Suite Container --> 
       <div class="hazard-row" style="border-left-color: #e6a23c;">
         <label style="font-weight: bold; font-size: 12px; cursor:pointer;">
-          <input type="checkbox" id="wildfireCheck"> Wildfire Progression Suite
+          <input type="checkbox" id="wildfireCheck" checked> Wildfire Progression Suite
         </label>
         <div class="slider-container">
           <span>Opacity:</span>
           <input type="range" id="wildfireOpacity" min="0" max="1" step="0.1" value="0.8" style="width:70%;">
         </div>
-        <div style="font-size: 10px; color: #909399; margin-top: 4px;">Shows Live (Red), 24h (Orange), & 48h (Yellow) perimeters.</div>
+        <button id="refreshLiveWildfireBtn" style="background:#e6a23c; color:white; border:none; margin-top:6px;">🔄 Refresh Live Feed</button>
+        <div style="font-size: 10px; color: #909399; margin-top: 4px;">Shows Live (Red), 24h (Orange), & 48h (Yellow) perimeters. Auto-refreshes daily.</div>
       </div>
       
       <!-- NWS Archive Warning Container --> 
@@ -121,6 +136,8 @@
       let activeTableWidget = null;
       let enrichedPropertiesForExport = [];
 
+      const WFIGS_SERVICE_URL = "https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Interagency_Perimeters/FeatureServer/0";
+
       // --- 1. Portfolio Render Templates Configuration ---
       const uniformRenderer = {
         type: "simple",
@@ -168,24 +185,41 @@
 
       // --- 4. Initialize Environmental Peril Feeds ---
       const liveWildfires = new FeatureLayer({
-        url: "https://services3.arcgis.com/T4QMsp1k8HJuIu4t/arcgis/rest/services/WFIGS_Interagency_Perimeters/FeatureServer/0",
-        refreshInterval: 5, visible: false, title: "Current Active Wildfires",
+        url: WFIGS_SERVICE_URL,
+        refreshInterval: 5, visible: true, title: "Current Active Wildfires",
         symbol: { type: "simple-fill", color: [245, 108, 108, 0.4], outline: { color: "#f56c6c", width: 2 } }
       });
 
       const wildfires24h = new FeatureLayer({
-        url: "https://services3.arcgis.com/T4QMsp1k8HJuIu4t/arcgis/rest/services/WFIGS_Interagency_Perimeters/FeatureServer/0",
-        visible: false, title: "Wildfires 24h Ago",
+        url: WFIGS_SERVICE_URL,
+        visible: true, title: "Wildfires 24h Ago",
         definitionExpression: `PolygonDateTime <= '${getPastDateString(24)}'`,
         symbol: { type: "simple-fill", color: [230, 162, 60, 0.3], outline: { color: "#e6a23c", width: 1.5, style: "dash" } }
       });
 
       const wildfires48h = new FeatureLayer({
-        url: "https://services3.arcgis.com/T4QMsp1k8HJuIu4t/arcgis/rest/services/WFIGS_Interagency_Perimeters/FeatureServer/0",
-        visible: false, title: "Wildfires 48h Ago",
+        url: WFIGS_SERVICE_URL,
+        visible: true, title: "Wildfires 48h Ago",
         definitionExpression: `PolygonDateTime <= '${getPastDateString(48)}'`,
         symbol: { type: "simple-fill", color: [144, 147, 153, 0.2], outline: { color: "#909399", width: 1, style: "dot" } }
       });
+
+      // Daily Scheduled Refresh Routine for 24h & 48h Wildfire Layers
+      function scheduleHistoricalWildfiresDailyRefresh() {
+        wildfires24h.definitionExpression = `PolygonDateTime <= '${getPastDateString(24)}'`;
+        wildfires48h.definitionExpression = `PolygonDateTime <= '${getPastDateString(48)}'`;
+        wildfires24h.refresh();
+        wildfires48h.refresh();
+
+        const now = new Date();
+        const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 5);
+        const timeUntilMidnight = tomorrow - now;
+
+        setTimeout(() => {
+          scheduleHistoricalWildfiresDailyRefresh();
+        }, timeUntilMidnight);
+      }
+      scheduleHistoricalWildfiresDailyRefresh();
 
       const stormWarningArchive48h = new FeatureLayer({
         url: "https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/NWS_Watches_Warnings_Advisories_Archive/FeatureServer/0",
@@ -207,19 +241,21 @@
         container: "viewDiv", map: map, zoom: 4, center: [-98, 39]
       });
 
-      map.add(propertyLayer); // Sits securely on top of visual hierarchy stack
+      map.add(propertyLayer);
 
       const sketchViewModel = new SketchViewModel({
         view: view, layer: sketchLayer,
         polygonSymbol: { type: "simple-fill", color: [52, 152, 219, 0.15], outline: { color: "#3498db", width: 2 } }
       });
 
+      // Initialize attribute table for live wildfires on start
+      initializeAttributeTable(liveWildfires);
+
       // --- 6. Pipeline Request Action Engine (Database Query) ---
       function queryPrivateDatabase(geoJsonGeometry, rawEsriGeometry) {
         document.getElementById("stats").innerHTML = "Executing secure lookup against millions of records...";
         activePolygonGeoJSON = geoJsonGeometry;
 
-        // Simulated backend data output: Top records matching bounding polygon parameters sorted by TIV
         setTimeout(() => {
           const mockServerResponse = [
             {"id": 1, "latitude": view.center.latitude + 0.1, "longitude": view.center.longitude - 0.1, "tiv": 85000000, "policy_number": "POL-CA-992"},
@@ -307,14 +343,27 @@
       }
 
       // --- 9. Dynamic UI Interaction Listeners ---
-      document.getElementById("drawBtn").addEventListener("click", () => {
+
+      // Drawing Tool Controls & Handlers
+      const drawingToolsDiv = document.getElementById("drawingTools");
+      
+      document.getElementById("drawMenuToggleBtn").addEventListener("click", () => {
+        drawingToolsDiv.style.display = drawingToolsDiv.style.display === "grid" ? "none" : "grid";
+      });
+
+      function startDrawingTool(toolType) {
         propertyLayer.removeAll();
         sketchLayer.removeAll();
         document.getElementById("exportBtn").disabled = true;
         document.getElementById("exportBtn").style.opacity = "0.5";
-        sketchViewModel.create("polygon");
-        document.getElementById("stats").innerHTML = "Click locations on the viewport map to draw custom boundary vertices...";
-      });
+        sketchViewModel.create(toolType);
+        document.getElementById("stats").innerHTML = `Drawing active: Use <b>${toolType}</b> tool on map...`;
+      }
+
+      document.getElementById("drawFreehandBtn").addEventListener("click", () => startDrawingTool("freehandPolygon"));
+      document.getElementById("drawPolygonBtn").addEventListener("click", () => startDrawingTool("polygon"));
+      document.getElementById("drawRectangleBtn").addEventListener("click", () => startDrawingTool("rectangle"));
+      document.getElementById("drawCircleBtn").addEventListener("click", () => startDrawingTool("circle"));
 
       sketchViewModel.on("create", function(evt) {
         if (evt.state === "complete") {
@@ -340,6 +389,14 @@
         if (mode === "proportional") propertyLayer.renderer = proportionalRenderer;
         if (mode === "tiers") propertyLayer.renderer = tieredRenderer;
         propertyLayer.refresh();
+      });
+
+      // On-Demand Manual Live Wildfire Refresh Button Listener
+      document.getElementById("refreshLiveWildfireBtn").addEventListener("click", () => {
+        liveWildfires.refresh();
+        wildfires24h.refresh();
+        wildfires48h.refresh();
+        document.getElementById("stats").innerHTML = "Wildfire REST service layers successfully re-queried and refreshed.";
       });
 
       // --- Peril Toggles & Opacity Range Bindings ---
