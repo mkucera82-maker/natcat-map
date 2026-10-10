@@ -454,16 +454,33 @@
       document.getElementById("plotTopExposedBtn").addEventListener("click", () => {
         if (lastExposedLocations.length === 0) return;
 
+        // Clear existing features
         propertyLayer.removeAll();
         const top1000 = lastExposedLocations.slice(0, 1000);
 
-        const localGraphics = top1000.map(loc => new Graphic({
-          geometry: { type: "point", longitude: loc.longitude, latitude: loc.latitude },
-          attributes: loc
-        }));
+        // Construct graphics in Web Mercator projection so they render properly on the MapView
+        const localGraphics = top1000.map(loc => {
+          const geoPoint = new Point({
+            longitude: loc.longitude,
+            latitude: loc.latitude,
+            spatialReference: { wkid: 4326 }
+          });
+          const mapPoint = webMercatorUtils.geographicToWebMercator(geoPoint);
+
+          return new Graphic({
+            geometry: mapPoint,
+            attributes: loc
+          });
+        });
 
         propertyLayer.applyEdits({ addFeatures: localGraphics }).then(() => {
           document.getElementById("stats").innerHTML = `Plotted top <b>${top1000.length.toLocaleString()}</b> exposed assets on map by TIV.`;
+          
+          // Zoom to extent of exposed markers on map
+          if (localGraphics.length > 0) {
+            const pointsGeom = localGraphics.map(g => g.geometry);
+            view.goTo(pointsGeom);
+          }
         });
       });
 
