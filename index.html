@@ -16,14 +16,14 @@
     /* Control Panel Layout styling */
     #controlPanel { 
       position: absolute; top: 20px; left: 20px; background: rgba(255,255,255,0.98); 
-      padding: 18px; z-index: 99; border-radius: 8px; width: 320px; max-height: 85%;
+      padding: 18px; z-index: 99; border-radius: 8px; width: 330px; max-height: 85%;
       box-shadow: 0 4px 20px rgba(0,0,0,0.15); overflow-y: auto; border: 1px solid #dcdfe6;
     }
     
     h3 { margin-top: 0; color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 6px; font-size: 16px; }
     h4 { margin: 12px 0 6px 0; color: #34495e; font-size: 13px; }
-    button { width: 100%; padding: 8px 10px; margin-bottom: 6px; cursor: pointer; font-weight: bold; border-radius: 4px; font-size: 12px; transition: all 0.2s; }
-    select, input[type="text"] { width: 93%; padding: 8px; border: 1px solid #dcdfe6; border-radius: 4px; font-size: 12px; margin-bottom: 8px; }
+    button { width: 100%; padding: 8px 10px; margin-bottom: 6px; cursor: pointer; font-weight: bold; border-radius: 4px; font-size: 12px; transition: all 0.2s; border: none; }
+    select, input[type="text"], input[type="file"] { width: 93%; padding: 7px; border: 1px solid #dcdfe6; border-radius: 4px; font-size: 12px; margin-bottom: 8px; }
     
     .hazard-row { background: #f8f9fa; padding: 10px; border-radius: 4px; margin-bottom: 8px; border-left: 4px solid #ccc; }
     .slider-container { margin-top: 6px; display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: #606266; }
@@ -33,6 +33,14 @@
     }
     .drawing-tools-container button { margin-bottom: 0; padding: 6px; font-size: 11px; background: #ffffff; color: #409eff; border: 1px solid #b3d8ff; }
     .drawing-tools-container button:hover { background: #409eff; color: white; }
+
+    /* Summary Table Card Styling */
+    .summary-card {
+      background: #f0f9eb; border: 1px solid #e1f3d8; border-radius: 6px; padding: 10px; margin-top: 10px; display: none;
+    }
+    .summary-card table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .summary-card th { text-align: left; color: #67c23a; padding-bottom: 4px; border-bottom: 1px solid #e1f3d8; }
+    .summary-card td { padding: 4px 0; font-weight: bold; color: #303133; }
 
     /* Attribute Table panel styling */
     #tableContainer { height: 30%; width: 100%; background: #ffffff; border-top: 3px solid #b3c0d1; z-index: 10; display: none; }
@@ -48,8 +56,15 @@
     <div id="controlPanel">
       <h3>Catastrophe Risk Engine</h3>
       
+      <!-- Portfolio Upload Section -->
+      <h4>📁 Load Test Portfolio Data</h4>
+      <input type="file" id="portfolioFileInput" accept=".csv, .tsv, .txt" />
+      <div style="font-size: 10px; color: #909399; margin-top: -4px; margin-bottom: 8px;">
+        Upload CSV export from Google Sheets with columns: <b>Location ID/Policy, Latitude, Longitude, TIV</b>.
+      </div>
+
       <!-- Manual drawing tool controllers --> 
-      <button id="drawMenuToggleBtn" style="background:#3498db; color:white; border:none;">✏️ Draw Custom Boundary</button>
+      <button id="drawMenuToggleBtn" style="background:#3498db; color:white;">✏️ Draw Custom Boundary</button>
       
       <div id="drawingTools" class="drawing-tools-container">
         <button id="drawFreehandBtn">🎨 Freehand</button>
@@ -58,8 +73,33 @@
         <button id="drawCircleBtn">⚪ Circle</button>
       </div>
 
-      <button id="clearBtn" style="background:#909399; color:white; border:none;">🔄 Reset Workspace</button>
+      <div style="display:flex; gap: 4px; margin-bottom: 6px;">
+        <button id="analyzeBtn" style="background:#67c23a; color:white; flex:1;">🔍 Analyze Polygons</button>
+        <button id="scrapPolygonsBtn" style="background:#f56c6c; color:white; flex:1;">🗑️ Scrap All Shapes</button>
+      </div>
+
+      <button id="clearBtn" style="background:#909399; color:white;">🔄 Reset Workspace</button>
       
+      <!-- Custom Summary Analysis Table -->
+      <div id="summaryCard" class="summary-card">
+        <div style="font-size:12px; font-weight:bold; color:#272636; margin-bottom:6px;">📊 Custom Boundary Exposure Summary</div>
+        <table>
+          <tr>
+            <td>Active Polygon Count:</td>
+            <td id="summaryPolyCount" style="text-align:right;">0</td>
+          </tr>
+          <tr>
+            <td>Exposed Locations:</td>
+            <td id="summaryLocCount" style="text-align:right; color:#d9534f;">0</td>
+          </tr>
+          <tr>
+            <td>Total Insured Value (TIV):</td>
+            <td id="summaryTIV" style="text-align:right; color:#272636;">$0</td>
+          </tr>
+        </table>
+        <div style="font-size: 10px; color: #67c23a; margin-top: 6px;">* Map displays top 1,000 exposed assets by TIV.</div>
+      </div>
+
       <!-- Symbology Customization Selector --> 
       <h4>Portfolio Symbology</h4>
       <select id="symbologySelect">
@@ -80,7 +120,7 @@
           <span>Opacity:</span>
           <input type="range" id="wildfireOpacity" min="0" max="1" step="0.1" value="0.8" style="width:70%;">
         </div>
-        <button id="refreshLiveWildfireBtn" style="background:#e6a23c; color:white; border:none; margin-top:6px;">🔄 Refresh Live Feed</button>
+        <button id="refreshLiveWildfireBtn" style="background:#e6a23c; color:white; margin-top:6px;">🔄 Refresh Live Feed</button>
         <div style="font-size: 10px; color: #909399; margin-top: 4px;">Shows Live (Red), 24h (Orange), & 48h (Yellow) perimeters. Auto-refreshes daily.</div>
       </div>
       
@@ -99,12 +139,12 @@
       <!-- Dynamic Paste URL Verification Tool --> 
       <h4>Load Custom Secure Layer</h4>
       <input type="text" id="customUrlInput" placeholder="https://.../FeatureServer/0" />
-      <button id="loadCustomLayerBtn" style="background:#e6a23c; color:white; border:none;">🔌 Connect Secure URL</button>
+      <button id="loadCustomLayerBtn" style="background:#e6a23c; color:white;">🔌 Connect Secure URL</button>
       
       <!-- Excel Action Interface --> 
-      <button id="exportBtn" style="background:#67c23a; color:white; border:none; margin-top:10px; opacity:0.5;" disabled>📥 Export Results to Excel</button>
+      <button id="exportBtn" style="background:#67c23a; color:white; margin-top:10px; opacity:0.5;" disabled>📥 Export Results to CSV</button>
       
-      <div id="stats">System ready. Draw a perimeter or select a hazard record row to initiate asset mapping.</div>
+      <div id="stats">System ready. Load portfolio or draw custom shapes to initiate exposure analysis.</div>
     </div>
     
     <div id="viewDiv"></div>
@@ -129,12 +169,16 @@
       "esri/widgets/Sketch/SketchViewModel",
       "esri/widgets/FeatureTable",
       "esri/geometry/geometryEngine",
+      "esri/geometry/Point",
+      "esri/layers/GraphicsLayer",
       "esri/layers/Layer"
-    ], function(Map, MapView, FeatureLayer, Graphic, SketchViewModel, FeatureTable, geometryEngine, Layer) {
+    ], function(Map, MapView, FeatureLayer, Graphic, SketchViewModel, FeatureTable, geometryEngine, Point, GraphicsLayer, Layer) {
 
-      let activePolygonGeoJSON = null;
       let activeTableWidget = null;
       let enrichedPropertiesForExport = [];
+
+      // Primary Portfolio Dataset Storage
+      let activePortfolio = [];
 
       const WFIGS_SERVICE_URL = "https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Interagency_Perimeters_Current/FeatureServer/0";
 
@@ -164,7 +208,7 @@
         ]
       };
 
-      // --- 2. Initialize Property Memory Storage Layer ---
+      // --- 2. Initialize Layers ---
       const propertyLayer = new FeatureLayer({
         source: [], objectIdField: "id",
         fields: [
@@ -176,50 +220,120 @@
         popupTemplate: { title: "Policy: {policy_number}", content: "<b>Total Insured Value (TIV):</b> ${tiv}" }
       });
 
-      // --- 3. Establish Historical Timestamp SQL Matrices ---
+      // GraphicsLayer to store multiple active custom drawn polygons
+      const customPolygonGraphicsLayer = new GraphicsLayer({
+        title: "Custom Drawn Boundaries"
+      });
+
+      // --- 3. Default Portfolio Generation (1,200 mock locations) ---
+      function generateMockPortfolio() {
+        const mockData = [];
+        const centerLat = 38.5;
+        const centerLon = -98.0;
+
+        for (let i = 1; i <= 1200; i++) {
+          const latOffset = (Math.random() - 0.5) * 12;
+          const lonOffset = (Math.random() - 0.5) * 20;
+          const randomTIV = Math.floor(Math.random() * 95000000) + 500000;
+          mockData.push({
+            id: i,
+            policy_number: `POL-US-${1000 + i}`,
+            latitude: parseFloat((centerLat + latOffset).toFixed(5)),
+            longitude: parseFloat((centerLon + lonOffset).toFixed(5)),
+            tiv: randomTIV
+          });
+        }
+        return mockData;
+      }
+
+      activePortfolio = generateMockPortfolio();
+
+      // --- 4. CSV File Uploader Engine ---
+      document.getElementById("portfolioFileInput").addEventListener("change", function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+          const text = evt.target.result;
+          parseAndLoadPortfolioCSV(text);
+        };
+        reader.readAsText(file);
+      });
+
+      function parseAndLoadPortfolioCSV(csvText) {
+        const lines = csvText.split(/\r\n|\n/);
+        if (lines.length < 2) {
+          alert("CSV file appears empty or missing rows.");
+          return;
+        }
+
+        const header = lines[0].toLowerCase().split(/,|\t/);
+        let idIdx = header.findIndex(h => h.includes("id") || h.includes("policy") || h.includes("location"));
+        let latIdx = header.findIndex(h => h.includes("lat"));
+        let lonIdx = header.findIndex(h => h.includes("lon") || h.includes("lng"));
+        let tivIdx = header.findIndex(h => h.includes("tiv") || h.includes("value"));
+
+        if (latIdx === -1 || lonIdx === -1 || tivIdx === -1) {
+          alert("Could not automatically map required CSV columns. Ensure headers include 'Latitude', 'Longitude', and 'TIV'.");
+          return;
+        }
+
+        const newPortfolio = [];
+        let recordCounter = 1;
+
+        for (let i = 1; i < lines.length; i++) {
+          if (!lines[i].trim()) continue;
+          const cols = lines[i].split(/,|\t/);
+
+          const lat = parseFloat(cols[latIdx]);
+          const lon = parseFloat(cols[lonIdx]);
+          const tiv = parseFloat(cols[tivIdx] ? cols[tivIdx].replace(/[\$,]/g, '') : "0");
+          const policy = idIdx !== -1 && cols[idIdx] ? cols[idIdx].trim() : `LOC-${recordCounter}`;
+
+          if (!isNaN(lat) && !isNaN(lon) && !isNaN(tiv)) {
+            newPortfolio.push({
+              id: recordCounter++,
+              policy_number: policy,
+              latitude: lat,
+              longitude: lon,
+              tiv: tiv
+            });
+          }
+        }
+
+        if (newPortfolio.length === 0) {
+          alert("No valid locations parsed from file.");
+          return;
+        }
+
+        activePortfolio = newPortfolio;
+        document.getElementById("stats").innerHTML = `📁 Portfolio loaded successfully! <b>${activePortfolio.length.toLocaleString()}</b> locations active in memory.`;
+      }
+
+      // --- 5. Historical Date Matrix & Hazard Feeds ---
       function getPastDateString(hoursAgo) {
         const d = new Date();
         d.setHours(d.getHours() - hoursAgo);
         return d.toISOString().replace('T', ' ').substring(0, 19);
       }
 
-      // --- 4. Initialize Environmental Peril Feeds ---
       const liveWildfires = new FeatureLayer({
-        url: WFIGS_SERVICE_URL,
-        refreshInterval: 5, visible: true, title: "Current Active Wildfires",
+        url: WFIGS_SERVICE_URL, refreshInterval: 5, visible: true, title: "Current Active Wildfires",
         symbol: { type: "simple-fill", color: [245, 108, 108, 0.4], outline: { color: "#f56c6c", width: 2 } }
       });
 
       const wildfires24h = new FeatureLayer({
-        url: WFIGS_SERVICE_URL,
-        visible: true, title: "Wildfires 24h Ago",
+        url: WFIGS_SERVICE_URL, visible: true, title: "Wildfires 24h Ago",
         definitionExpression: `PolygonDateTime <= '${getPastDateString(24)}'`,
         symbol: { type: "simple-fill", color: [230, 162, 60, 0.3], outline: { color: "#e6a23c", width: 1.5, style: "dash" } }
       });
 
       const wildfires48h = new FeatureLayer({
-        url: WFIGS_SERVICE_URL,
-        visible: true, title: "Wildfires 48h Ago",
+        url: WFIGS_SERVICE_URL, visible: true, title: "Wildfires 48h Ago",
         definitionExpression: `PolygonDateTime <= '${getPastDateString(48)}'`,
         symbol: { type: "simple-fill", color: [144, 147, 153, 0.2], outline: { color: "#909399", width: 1, style: "dot" } }
       });
-
-      // Daily Scheduled Refresh Routine for 24h & 48h Wildfire Layers
-      function scheduleHistoricalWildfiresDailyRefresh() {
-        wildfires24h.definitionExpression = `PolygonDateTime <= '${getPastDateString(24)}'`;
-        wildfires48h.definitionExpression = `PolygonDateTime <= '${getPastDateString(48)}'`;
-        wildfires24h.refresh();
-        wildfires48h.refresh();
-
-        const now = new Date();
-        const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 5);
-        const timeUntilMidnight = tomorrow - now;
-
-        setTimeout(() => {
-          scheduleHistoricalWildfiresDailyRefresh();
-        }, timeUntilMidnight);
-      }
-      scheduleHistoricalWildfiresDailyRefresh();
 
       const stormWarningArchive48h = new FeatureLayer({
         url: "https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/NWS_Watches_Warnings_Advisories_Archive/FeatureServer/0",
@@ -229,70 +343,135 @@
         popupTemplate: { title: "{EVENT}", content: "<b>Issued:</b> {ISSUED}<br/><b>Expired:</b> {ENDED}" }
       });
 
-      const sketchLayer = new FeatureLayer({ source: [], objectIdField: "id", fields: [{ name: "id", type: "integer" }] });
-
-      // --- 5. Assemble Core Map Engine Instance ---
+      // --- 6. Core Map Instance ---
       const map = new Map({
         basemap: "gray-vector",
-        layers: [wildfires48h, wildfires24h, liveWildfires, stormWarningArchive48h, sketchLayer]
+        layers: [wildfires48h, wildfires24h, liveWildfires, stormWarningArchive48h, customPolygonGraphicsLayer, propertyLayer]
       });
 
       const view = new MapView({
         container: "viewDiv", map: map, zoom: 4, center: [-98, 39]
       });
 
-      map.add(propertyLayer);
+      // Polygon popup template with Delete action
+      const customPolygonSymbol = {
+        type: "simple-fill",
+        color: [52, 152, 219, 0.2],
+        outline: { color: "#3498db", width: 2 }
+      };
 
       const sketchViewModel = new SketchViewModel({
-        view: view, layer: sketchLayer,
-        polygonSymbol: { type: "simple-fill", color: [52, 152, 219, 0.15], outline: { color: "#3498db", width: 2 } }
+        view: view,
+        layer: customPolygonGraphicsLayer,
+        polygonSymbol: customPolygonSymbol,
+        defaultCreateOptions: { hasZ: false }
       });
 
-      // Initialize attribute table for live wildfires on start
       initializeAttributeTable(liveWildfires);
 
-      // --- 6. Pipeline Request Action Engine (Database Query) ---
-      function queryPrivateDatabase(geoJsonGeometry, rawEsriGeometry) {
-        document.getElementById("stats").innerHTML = "Executing secure lookup against millions of records...";
-        activePolygonGeoJSON = geoJsonGeometry;
+      // --- 7. Portfolio Exposure Analysis Engine ---
+      function analyzeExposureForGeometry(boundaryGeometry, geometryLabel) {
+        document.getElementById("stats").innerHTML = `Evaluating portfolio against <b>${geometryLabel}</b>...`;
 
-        setTimeout(() => {
-          const mockServerResponse = [
-            {"id": 1, "latitude": view.center.latitude + 0.1, "longitude": view.center.longitude - 0.1, "tiv": 85000000, "policy_number": "POL-CA-992"},
-            {"id": 2, "latitude": view.center.latitude - 0.1, "longitude": view.center.longitude + 0.1, "tiv": 42000000, "policy_number": "POL-TX-104"},
-            {"id": 3, "latitude": view.center.latitude + 0.05, "longitude": view.center.longitude + 0.05, "tiv": 9500000, "policy_number": "POL-FL-551"}
-          ];
+        // Filter active memory portfolio spatially using geometryEngine
+        const exposedLocations = activePortfolio.filter(loc => {
+          const pt = new Point({ longitude: loc.longitude, latitude: loc.latitude, spatialReference: { wkid: 4326 } });
+          return geometryEngine.contains(boundaryGeometry, pt);
+        });
 
-          document.getElementById("stats").innerHTML = `Match successful. Displaying top <b>${mockServerResponse.length}</b> exposed locations sorted by TIV.`;
+        // Sort by TIV descending
+        exposedLocations.sort((a, b) => b.tiv - a.tiv);
 
-          propertyLayer.removeAll();
+        // Display top 1,000 on map
+        const mapLocations = exposedLocations.slice(0, 1000);
+        propertyLayer.removeAll();
 
-          const localFeatures = mockServerResponse.map(loc => {
-            return new Graphic({
-              geometry: { type: "point", longitude: loc.longitude, latitude: loc.latitude },
-              attributes: loc
-            });
-          });
+        const localGraphics = mapLocations.map(loc => new Graphic({
+          geometry: { type: "point", longitude: loc.longitude, latitude: loc.latitude },
+          attributes: loc
+        }));
 
-          propertyLayer.applyEdits({ addFeatures: localFeatures }).then(() => {
-            performClientSideSpatialJoin(localFeatures, rawEsriGeometry);
-          });
-        }, 800);
+        propertyLayer.applyEdits({ addFeatures: localGraphics }).then(() => {
+          performClientSideSpatialJoin(localGraphics, boundaryGeometry);
+        });
+
+        document.getElementById("stats").innerHTML = `Analysis Complete: <b>${exposedLocations.length.toLocaleString()}</b> locations exposed across current active portfolio.`;
+
+        return exposedLocations;
       }
 
-      // --- 7. Enriched Spatial Join Processing Engine ---
-      function performClientSideSpatialJoin(propertyGraphics, evaluationBoundary) {
-        document.getElementById("stats").innerHTML += "<br/>Calculating hazard overlap intersections...";
+      // --- 8. Custom Polygon Multi-Boundary Analysis ---
+      document.getElementById("analyzeBtn").addEventListener("click", () => {
+        const graphics = customPolygonGraphicsLayer.graphics.toArray();
+        if (graphics.length === 0) {
+          alert("Please draw at least one custom polygon boundary before running analysis.");
+          return;
+        }
 
+        const geometries = graphics.map(g => g.geometry);
+        let combinedGeometry = geometries[0];
+        if (geometries.length > 1) {
+          combinedGeometry = geometryEngine.union(geometries);
+        }
+
+        const exposedLocations = analyzeExposureForGeometry(combinedGeometry, `${graphics.length} Custom Polygons`);
+
+        // Compute exact full-portfolio stats (even >1,000)
+        const totalTiv = exposedLocations.reduce((sum, loc) => sum + loc.tiv, 0);
+
+        document.getElementById("summaryCard").style.display = "block";
+        document.getElementById("summaryPolyCount").innerText = graphics.length;
+        document.getElementById("summaryLocCount").innerText = exposedLocations.length.toLocaleString();
+        document.getElementById("summaryTIV").innerText = "$" + totalTiv.toLocaleString(undefined, { maximumFractionDigits: 0 });
+      });
+
+      // --- 9. Individual Polygon Deletion & Management ---
+      view.popup.actions = [];
+      
+      // Handle click on custom drawn graphic to allow single deletion
+      view.on("click", (evt) => {
+        view.hitTest(evt).then((response) => {
+          const graphicHits = response.results.filter(r => r.graphic && r.graphic.layer === customPolygonGraphicsLayer);
+          if (graphicHits.length > 0) {
+            const hitGraphic = graphicHits[0].graphic;
+            view.popup.open({
+              title: "Custom Polygon Options",
+              content: "Select an option below to manage this specific custom polygon boundary.",
+              actions: [{ title: "🗑️ Delete This Polygon", id: "delete-polygon" }],
+              location: evt.mapPoint
+            });
+
+            const handleAction = (actionEvt) => {
+              if (actionEvt.action.id === "delete-polygon") {
+                customPolygonGraphicsLayer.remove(hitGraphic);
+                view.popup.close();
+                document.getElementById("stats").innerHTML = "Selected polygon deleted.";
+                view.popup.on("trigger-action", null);
+              }
+            };
+            view.popup.on("trigger-action", handleAction);
+          }
+        });
+      });
+
+      // Scrap All Custom Polygons
+      document.getElementById("scrapPolygonsBtn").addEventListener("click", () => {
+        customPolygonGraphicsLayer.removeAll();
+        document.getElementById("summaryCard").style.display = "none";
+        document.getElementById("stats").innerHTML = "All custom polygon boundaries removed.";
+      });
+
+      // --- 10. Spatial Join & CSV Export Pipeline ---
+      function performClientSideSpatialJoin(propertyGraphics, evaluationBoundary) {
         const query = stormWarningArchive48h.createQuery();
         query.geometry = evaluationBoundary;
         query.outFields = ["EVENT", "ISSUED"];
 
         stormWarningArchive48h.queryFeatures(query).then(function(hazardResults) {
-          const hazards = hazardResults.features;
+          const hazards = hazardResults.features || [];
 
           enrichedPropertiesForExport = propertyGraphics.map(prop => {
-            let overlayThreat = "No Active Warnings Detected";
+            let overlayThreat = "Custom Boundary Footprint Match";
             hazards.forEach(hazard => {
               if (geometryEngine.contains(hazard.geometry, prop.geometry)) {
                 overlayThreat = hazard.attributes.EVENT + " (Issued: " + hazard.attributes.ISSUED + ")";
@@ -308,11 +487,18 @@
           const exportBtn = document.getElementById("exportBtn");
           exportBtn.disabled = false;
           exportBtn.style.opacity = "1";
-          document.getElementById("stats").innerHTML += "<br/>Excel download payload compiled successfully.";
+        }).catch(() => {
+          enrichedPropertiesForExport = propertyGraphics.map(prop => ({
+            ...prop.attributes,
+            Exposed_Hazard_Context: "Custom Boundary Footprint Match"
+          }));
+          const exportBtn = document.getElementById("exportBtn");
+          exportBtn.disabled = false;
+          exportBtn.style.opacity = "1";
         });
       }
 
-      // --- 8. Dynamic Interactive Attribute Spreadsheet Component ---
+      // --- 11. Attribute Table Grid Component ---
       function initializeAttributeTable(targetLayer) {
         const tableContainer = document.getElementById("tableContainer");
         const activeNameLabel = document.getElementById("activeTableName");
@@ -335,16 +521,14 @@
               if (result.features.length > 0) {
                 const selectedGeom = result.features[0].geometry;
                 view.goTo(selectedGeom.extent.expand(1.6));
-                queryPrivateDatabase(selectedGeom.toJSON(), selectedGeom);
+                analyzeExposureForGeometry(selectedGeom, targetLayer.title || "Selected Hazard Feature");
               }
             });
           }
         });
       }
 
-      // --- 9. Dynamic UI Interaction Listeners ---
-
-      // Drawing Tool Controls & Handlers
+      // --- 12. Drawing Tool Event Binding ---
       const drawingToolsDiv = document.getElementById("drawingTools");
       
       document.getElementById("drawMenuToggleBtn").addEventListener("click", () => {
@@ -352,12 +536,8 @@
       });
 
       function startDrawingTool(toolType) {
-        propertyLayer.removeAll();
-        sketchLayer.removeAll();
-        document.getElementById("exportBtn").disabled = true;
-        document.getElementById("exportBtn").style.opacity = "0.5";
         sketchViewModel.create(toolType);
-        document.getElementById("stats").innerHTML = `Drawing active: Use <b>${toolType}</b> tool on map...`;
+        document.getElementById("stats").innerHTML = `Drawing tool active: <b>${toolType}</b>. Draw shape on map...`;
       }
 
       document.getElementById("drawFreehandBtn").addEventListener("click", () => startDrawingTool("freehandPolygon"));
@@ -365,22 +545,20 @@
       document.getElementById("drawRectangleBtn").addEventListener("click", () => startDrawingTool("rectangle"));
       document.getElementById("drawCircleBtn").addEventListener("click", () => startDrawingTool("circle"));
 
-      sketchViewModel.on("create", function(evt) {
-        if (evt.state === "complete") {
-          queryPrivateDatabase(evt.graphic.geometry.toJSON(), evt.graphic.geometry);
-        }
-      });
-
+      // --- 13. UI Controls & Workspace Reset ---
       document.getElementById("clearBtn").addEventListener("click", () => {
-        sketchLayer.removeAll();
+        customPolygonGraphicsLayer.removeAll();
         propertyLayer.removeAll();
-        activePolygonGeoJSON = null;
         enrichedPropertiesForExport = [];
+        document.getElementById("summaryCard").style.display = "none";
+        document.getElementById("summaryPolyCount").innerText = "0";
+        document.getElementById("summaryLocCount").innerText = "0";
+        document.getElementById("summaryTIV").innerText = "$0";
         document.getElementById("exportBtn").disabled = true;
         document.getElementById("exportBtn").style.opacity = "0.5";
         document.getElementById("tableContainer").style.display = "none";
         if (activeTableWidget) { activeTableWidget.destroy(); activeTableWidget = null; }
-        document.getElementById("stats").innerHTML = "Workspace reset complete. Configuration baseline initialized.";
+        document.getElementById("stats").innerHTML = "Workspace reset complete. All custom shapes, exposure maps, and summary metrics cleared.";
       });
 
       document.getElementById("symbologySelect").addEventListener("change", (e) => {
@@ -391,20 +569,14 @@
         propertyLayer.refresh();
       });
 
-      // On-Demand Manual Live Wildfire Refresh Button Listener
       document.getElementById("refreshLiveWildfireBtn").addEventListener("click", () => {
-        liveWildfires.refresh();
-        wildfires24h.refresh();
-        wildfires48h.refresh();
+        liveWildfires.refresh(); wildfires24h.refresh(); wildfires48h.refresh();
         document.getElementById("stats").innerHTML = "Wildfire REST service layers successfully re-queried and refreshed.";
       });
 
-      // --- Peril Toggles & Opacity Range Bindings ---
       document.getElementById("wildfireCheck").addEventListener("change", (e) => {
         const vis = e.target.checked;
-        liveWildfires.visible = vis;
-        wildfires24h.visible = vis;
-        wildfires48h.visible = vis;
+        liveWildfires.visible = vis; wildfires24h.visible = vis; wildfires48h.visible = vis;
         if(vis) { initializeAttributeTable(liveWildfires); }
       });
 
@@ -422,33 +594,26 @@
         stormWarningArchive48h.opacity = parseFloat(e.target.value);
       });
 
-      // --- Secure Pasted URL Loader ---
       document.getElementById("loadCustomLayerBtn").addEventListener("click", () => {
         const urlStr = document.getElementById("customUrlInput").value.trim();
-
         if (!urlStr.toLowerCase().startsWith("https://")) {
-          document.getElementById("stats").innerHTML = "⚠️ Connection Refused: Insecure URL protocol. Layer access requires 'https://' encryption keys.";
+          document.getElementById("stats").innerHTML = "⚠️ Connection Refused: Layer access requires 'https://' protocol.";
           return;
         }
 
-        document.getElementById("stats").innerHTML = "Connecting to secure network map service directory...";
-
         Layer.fromArcGISServerUrl({ url: urlStr }).then(function(customLayer) {
           map.add(customLayer, 0);
-          document.getElementById("stats").innerHTML = "Custom dynamic REST data layer successfully linked to workspace.";
+          document.getElementById("stats").innerHTML = "Custom dynamic REST data layer linked to workspace.";
           if(customLayer.type === "feature") { initializeAttributeTable(customLayer); }
-        }).catch(function(err){
+        }).catch(function(){
           document.getElementById("stats").innerHTML = "Link validation error. Confirm CORS configurations allow resource connections.";
         });
       });
 
-      // --- CSV/Excel Export Trigger ---
       document.getElementById("exportBtn").addEventListener("click", () => {
         if(enrichedPropertiesForExport.length === 0) return;
-        document.getElementById("stats").innerHTML = "Packaging secure consolidated asset ledger data...";
 
-        let csvContent = "data:text/csv;charset=utf-8,Policy Number,Latitude,Longitude,TIV,Exposed Catastrophe Overlay\n";
-
+        let csvContent = "data:text/csv;charset=utf-8,Location ID,Latitude,Longitude,TIV,Exposed Hazard Overlay\n";
         enrichedPropertiesForExport.forEach(row => {
           csvContent += `${row.policy_number},${row.latitude},${row.longitude},${row.tiv},"${row.Exposed_Hazard_Context}"\n`;
         });
@@ -456,12 +621,10 @@
         const encodedUri = encodeURI(csvContent);
         const link = document.createElement("a");
         link.setAttribute("href", encodedUri);
-        link.setAttribute("download", `Catastrophic_Exposure_Report_${new Date().toISOString().split('T')[0]}.csv`);
+        link.setAttribute("download", `Portfolio_Exposure_Report_${new Date().toISOString().split('T')[0]}.csv`);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-
-        document.getElementById("stats").innerHTML = "Data extraction document successfully downloaded to host file ledger.";
       });
 
     });
