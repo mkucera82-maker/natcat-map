@@ -36,7 +36,7 @@
 
     /* Target Scope Selector Radio Box */
     .target-scope-box {
-      background: #fdf6ec; border: 1px solid #f3d19e; border-radius: 6px; padding: 8px; margin-bottom: 8px; font-size: 11px;
+      background: #fdf6ec; border: 1px solid #f3d19e; border-radius: 6px; padding: 8px; margin-bottom: 10px; font-size: 11px;
     }
     .target-scope-box label { display: block; margin-bottom: 4px; cursor: pointer; color: #606266; font-weight: 500; }
     .target-scope-box input[type="radio"] { margin-right: 6px; }
@@ -65,13 +65,18 @@
       <!-- Portfolio Upload Section -->
       <h4>📁 Base Portfolio Management</h4>
       <input type="file" id="portfolioFileInput" accept=".csv, .tsv, .txt" />
-      <button id="savePortfolioBtn" style="background:#27ae60; color:white; display:none;">💾 Save as Base Portfolio</button>
-      <div id="portfolioStatusText" style="font-size: 10px; color: #909399; margin-top: -2px; margin-bottom: 8px;">
-        Status: <i>Default Mock Test Portfolio Active</i>
+      <button id="savePortfolioBtn" style="background:#27ae60; color:white; display:none; margin-bottom:8px;">💾 Save as Base Portfolio</button>
+      <div id="portfolioStatusText" style="font-size: 10px; color: #909399; margin-top: -2px; margin-bottom: 10px;">
+        Status: <i>Default Mock Test Portfolio Active (1,200 Locs)</i>
       </div>
 
-      <!-- Portfolio Visualization Toggle -->
-      <button id="togglePortfolioBtn" style="background:#8e44ad; color:white; margin-bottom:10px;">📍 Toggle Base Portfolio View</button>
+      <!-- Target Scope Radio Selector for Polygon Analysis (Replaced Toggle Button space) -->
+      <h4>🎯 Polygon Analysis Target Scope</h4>
+      <div class="target-scope-box">
+        <label><input type="radio" name="analysisScope" value="peril" checked> 1) Authoritative Peril Layers</label>
+        <label><input type="radio" name="analysisScope" value="customLayer"> 2) User Loaded Custom Layer</label>
+        <label><input type="radio" name="analysisScope" value="drawnBoundary"> 3) Custom-Drawn Boundary</label>
+      </div>
 
       <!-- Manual drawing tool controllers --> 
       <button id="drawMenuToggleBtn" style="background:#3498db; color:white;">✏️ Draw Custom Boundary</button>
@@ -85,14 +90,6 @@
       <div style="display:flex; gap: 4px; margin-bottom: 6px;">
         <button id="scrapPolygonsBtn" style="background:#f56c6c; color:white; flex:1;">🗑️ Scrap Shapes</button>
         <button id="clearBtn" style="background:#909399; color:white; flex:1;">🔄 Reset Workspace</button>
-      </div>
-
-      <!-- Target Scope Radio Selector for Polygon Analysis -->
-      <h4>🎯 Polygon Analysis Target Scope</h4>
-      <div class="target-scope-box">
-        <label><input type="radio" name="analysisScope" value="peril" checked> 1) Authoritative Peril Layers</label>
-        <label><input type="radio" name="analysisScope" value="customLayer"> 2) User Loaded Custom Layer</label>
-        <label><input type="radio" name="analysisScope" value="drawnBoundary"> 3) Custom-Drawn Boundary</label>
       </div>
 
       <button id="analyzeBtn" style="background:#e67e22; color:white;">🔍 Run Polygon Analysis</button>
@@ -195,7 +192,6 @@
       // Primary Portfolio Dataset Storage & State
       let activePortfolio = [];
       let pendingParsedPortfolio = null;
-      let isPortfolioVisible = false;
       let lastExposedLocations = [];
       let userCustomConnectedLayer = null;
 
@@ -264,42 +260,9 @@
 
       activePortfolio = generateMockPortfolio();
 
-      // Portfolio Visualization Handler
-      function renderBasePortfolioOnMap() {
-        propertyLayer.removeAll();
-        if (!isPortfolioVisible) return;
-
-        const sortedPortfolio = [...activePortfolio].sort((a, b) => b.tiv - a.tiv);
-        const top1000 = sortedPortfolio.slice(0, 1000);
-
-        const graphics = top1000.map(loc => new Graphic({
-          geometry: { type: "point", longitude: loc.longitude, latitude: loc.latitude },
-          attributes: loc
-        }));
-
-        propertyLayer.applyEdits({ addFeatures: graphics }).then(() => {
-          document.getElementById("stats").innerHTML = `Showing top <b>${top1000.length.toLocaleString()}</b> base portfolio locations on map (out of <b>${activePortfolio.length.toLocaleString()}</b> total active).`;
-        });
-      }
-
-      document.getElementById("togglePortfolioBtn").addEventListener("click", () => {
-        isPortfolioVisible = !isPortfolioVisible;
-        const btn = document.getElementById("togglePortfolioBtn");
-        
-        if (isPortfolioVisible) {
-          btn.style.background = "#27ae60";
-          btn.innerText = "📍 Hide Base Portfolio View";
-          renderBasePortfolioOnMap();
-        } else {
-          btn.style.background = "#8e44ad";
-          btn.innerText = "📍 Toggle Base Portfolio View";
-          propertyLayer.removeAll();
-          document.getElementById("stats").innerHTML = "Base portfolio layer hidden.";
-        }
-      });
-
-      // CSV File Reader & Parser Engine
-      document.getElementById("portfolioFileInput").addEventListener("change", function(e) {
+      // CSV File Reader & Parsing Logic
+      const fileInput = document.getElementById("portfolioFileInput");
+      fileInput.addEventListener("change", function(e) {
         const file = e.target.files[0];
         if (!file) return;
 
@@ -363,24 +326,27 @@
           return;
         }
 
+        // Stage portfolio & auto-commit so analysis works immediately
         pendingParsedPortfolio = stagedPortfolio;
+        activePortfolio = stagedPortfolio; 
+
         const saveBtn = document.getElementById("savePortfolioBtn");
         saveBtn.style.display = "block";
         saveBtn.innerText = `💾 Save ${stagedPortfolio.length.toLocaleString()} Locations as Base Portfolio`;
-        document.getElementById("portfolioStatusText").innerHTML = `Parsed <b>${fileName}</b>. Click 'Save' above to set as base portfolio.`;
+        document.getElementById("portfolioStatusText").innerHTML = `Parsed <b>${fileName}</b> (${stagedPortfolio.length.toLocaleString()} Locs). Click 'Save' to confirm.`;
       }
 
       // Commit Pending Portfolio to Memory
       document.getElementById("savePortfolioBtn").addEventListener("click", () => {
-        if (!pendingParsedPortfolio) return;
-        activePortfolio = pendingParsedPortfolio;
-        pendingParsedPortfolio = null;
+        if (!pendingParsedPortfolio && activePortfolio.length === 0) return;
+        if (pendingParsedPortfolio) {
+          activePortfolio = pendingParsedPortfolio;
+          pendingParsedPortfolio = null;
+        }
 
         document.getElementById("savePortfolioBtn").style.display = "none";
-        document.getElementById("portfolioStatusText").innerHTML = `Status: <b>${activePortfolio.length.toLocaleString()} Locations Saved in Base Portfolio</b>`;
-        document.getElementById("stats").innerHTML = `Base Portfolio updated! <b>${activePortfolio.length.toLocaleString()}</b> locations active in memory.`;
-
-        if (isPortfolioVisible) { renderBasePortfolioOnMap(); }
+        document.getElementById("portfolioStatusText").innerHTML = `Status: <b>${activePortfolio.length.toLocaleString()} Locations Active in Base Portfolio</b>`;
+        document.getElementById("stats").innerHTML = `Base Portfolio saved! <b>${activePortfolio.length.toLocaleString()}</b> locations set in active memory.`;
       });
 
       // Peril & Environmental Feeds
@@ -509,7 +475,6 @@
           computeExposureForGeometries(geoms, "Custom-Drawn Boundary");
 
         } else if (selectedScope === "peril") {
-          // Query active WFIGS Wildfire geometries
           liveWildfires.queryFeatures({ where: "1=1", returnGeometry: true }).then(res => {
             const geoms = res.features.map(f => f.geometry);
             if (!geoms || geoms.length === 0) {
@@ -622,11 +587,6 @@
         propertyLayer.removeAll();
         enrichedPropertiesForExport = [];
         lastExposedLocations = [];
-        isPortfolioVisible = false;
-
-        const toggleBtn = document.getElementById("togglePortfolioBtn");
-        toggleBtn.style.background = "#8e44ad";
-        toggleBtn.innerText = "📍 Toggle Base Portfolio View";
 
         document.getElementById("summaryCard").style.display = "none";
         document.getElementById("exportBtn").disabled = true;
