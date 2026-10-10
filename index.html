@@ -29,7 +29,7 @@
     .slider-container { margin-top: 6px; display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: #606266; }
     
     .drawing-tools-container {
-      display: none; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 8px; background: #ebf5ff; padding: 6px; border-radius: 4px; border: 1px solid #b3d8ff;
+      display: none; grid-template-columns: 1fr 1fr 1fr; gap: 4px; margin-bottom: 8px; background: #ebf5ff; padding: 6px; border-radius: 4px; border: 1px solid #b3d8ff;
     }
     .drawing-tools-container button { margin-bottom: 0; padding: 6px; font-size: 11px; background: #ffffff; color: #409eff; border: 1px solid #b3d8ff; }
     .drawing-tools-container button:hover { background: #409eff; color: white; }
@@ -57,17 +57,19 @@
       <h3>Catastrophe Risk Engine</h3>
       
       <!-- Portfolio Upload Section -->
-      <h4>📁 Load Test Portfolio Data</h4>
+      <h4>📁 Portfolio Data Management</h4>
       <input type="file" id="portfolioFileInput" accept=".csv, .tsv, .txt" />
       <div style="font-size: 10px; color: #909399; margin-top: -4px; margin-bottom: 8px;">
         Upload CSV export from Google Sheets with columns: <b>Location ID/Policy, Latitude, Longitude, TIV</b>.
       </div>
 
+      <!-- Portfolio Visualization Toggle -->
+      <button id="togglePortfolioBtn" style="background:#8e44ad; color:white; margin-bottom:10px;">📍 Toggle Base Portfolio View</button>
+
       <!-- Manual drawing tool controllers --> 
       <button id="drawMenuToggleBtn" style="background:#3498db; color:white;">✏️ Draw Custom Boundary</button>
       
       <div id="drawingTools" class="drawing-tools-container">
-        <button id="drawFreehandBtn">🎨 Freehand</button>
         <button id="drawPolygonBtn">📐 Polygon</button>
         <button id="drawRectangleBtn">⬜ Rectangle</button>
         <button id="drawCircleBtn">⚪ Circle</button>
@@ -177,8 +179,9 @@
       let activeTableWidget = null;
       let enrichedPropertiesForExport = [];
 
-      // Primary Portfolio Dataset Storage
+      // Primary Portfolio Dataset Storage & State Toggles
       let activePortfolio = [];
+      let isPortfolioVisible = false;
 
       const WFIGS_SERVICE_URL = "https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Interagency_Perimeters_Current/FeatureServer/0";
 
@@ -248,7 +251,41 @@
 
       activePortfolio = generateMockPortfolio();
 
-      // --- 4. CSV File Uploader Engine ---
+      // --- 4. Portfolio Map Rendering & CSV Uploader Engine ---
+      function renderBasePortfolioOnMap() {
+        propertyLayer.removeAll();
+        if (!isPortfolioVisible) return;
+
+        // Sort by TIV descending and plot top 1,000
+        const sortedPortfolio = [...activePortfolio].sort((a, b) => b.tiv - a.tiv);
+        const top1000 = sortedPortfolio.slice(0, 1000);
+
+        const graphics = top1000.map(loc => new Graphic({
+          geometry: { type: "point", longitude: loc.longitude, latitude: loc.latitude },
+          attributes: loc
+        }));
+
+        propertyLayer.applyEdits({ addFeatures: graphics }).then(() => {
+          document.getElementById("stats").innerHTML = `Showing top <b>${top1000.length.toLocaleString()}</b> locations by TIV on map out of <b>${activePortfolio.length.toLocaleString()}</b> total active assets.`;
+        });
+      }
+
+      document.getElementById("togglePortfolioBtn").addEventListener("click", () => {
+        isPortfolioVisible = !isPortfolioVisible;
+        const btn = document.getElementById("togglePortfolioBtn");
+        
+        if (isPortfolioVisible) {
+          btn.style.background = "#27ae60";
+          btn.innerText = "📍 Hide Base Portfolio View";
+          renderBasePortfolioOnMap();
+        } else {
+          btn.style.background = "#8e44ad";
+          btn.innerText = "📍 Toggle Base Portfolio View";
+          propertyLayer.removeAll();
+          document.getElementById("stats").innerHTML = "Base portfolio layer hidden.";
+        }
+      });
+
       document.getElementById("portfolioFileInput").addEventListener("change", function(e) {
         const file = e.target.files[0];
         if (!file) return;
@@ -307,8 +344,14 @@
           return;
         }
 
+        // Override default dataset with uploaded file data
         activePortfolio = newPortfolio;
-        document.getElementById("stats").innerHTML = `📁 Portfolio loaded successfully! <b>${activePortfolio.length.toLocaleString()}</b> locations active in memory.`;
+        
+        if (isPortfolioVisible) {
+          renderBasePortfolioOnMap();
+        } else {
+          document.getElementById("stats").innerHTML = `📁 Custom Portfolio uploaded! <b>${activePortfolio.length.toLocaleString()}</b> locations loaded into active memory (overriding default test set).`;
+        }
       }
 
       // --- 5. Historical Date Matrix & Hazard Feeds ---
@@ -353,7 +396,6 @@
         container: "viewDiv", map: map, zoom: 4, center: [-98, 39]
       });
 
-      // Polygon popup template with Delete action
       const customPolygonSymbol = {
         type: "simple-fill",
         color: [52, 152, 219, 0.2],
@@ -373,16 +415,13 @@
       function analyzeExposureForGeometry(boundaryGeometry, geometryLabel) {
         document.getElementById("stats").innerHTML = `Evaluating portfolio against <b>${geometryLabel}</b>...`;
 
-        // Filter active memory portfolio spatially using geometryEngine
         const exposedLocations = activePortfolio.filter(loc => {
           const pt = new Point({ longitude: loc.longitude, latitude: loc.latitude, spatialReference: { wkid: 4326 } });
           return geometryEngine.contains(boundaryGeometry, pt);
         });
 
-        // Sort by TIV descending
         exposedLocations.sort((a, b) => b.tiv - a.tiv);
 
-        // Display top 1,000 on map
         const mapLocations = exposedLocations.slice(0, 1000);
         propertyLayer.removeAll();
 
@@ -395,7 +434,7 @@
           performClientSideSpatialJoin(localGraphics, boundaryGeometry);
         });
 
-        document.getElementById("stats").innerHTML = `Analysis Complete: <b>${exposedLocations.length.toLocaleString()}</b> locations exposed across current active portfolio.`;
+        document.getElementById("stats").innerHTML = `Analysis Complete: <b>${exposedLocations.length.toLocaleString()}</b> locations exposed across active base portfolio.`;
 
         return exposedLocations;
       }
@@ -416,7 +455,6 @@
 
         const exposedLocations = analyzeExposureForGeometry(combinedGeometry, `${graphics.length} Custom Polygons`);
 
-        // Compute exact full-portfolio stats (even >1,000)
         const totalTiv = exposedLocations.reduce((sum, loc) => sum + loc.tiv, 0);
 
         document.getElementById("summaryCard").style.display = "block";
@@ -428,7 +466,6 @@
       // --- 9. Individual Polygon Deletion & Management ---
       view.popup.actions = [];
       
-      // Handle click on custom drawn graphic to allow single deletion
       view.on("click", (evt) => {
         view.hitTest(evt).then((response) => {
           const graphicHits = response.results.filter(r => r.graphic && r.graphic.layer === customPolygonGraphicsLayer);
@@ -454,7 +491,6 @@
         });
       });
 
-      // Scrap All Custom Polygons
       document.getElementById("scrapPolygonsBtn").addEventListener("click", () => {
         customPolygonGraphicsLayer.removeAll();
         document.getElementById("summaryCard").style.display = "none";
@@ -528,7 +564,7 @@
         });
       }
 
-      // --- 12. Drawing Tool Event Binding ---
+      // --- 12. Drawing Tool Event Binding (Freehand option removed) ---
       const drawingToolsDiv = document.getElementById("drawingTools");
       
       document.getElementById("drawMenuToggleBtn").addEventListener("click", () => {
@@ -540,7 +576,6 @@
         document.getElementById("stats").innerHTML = `Drawing tool active: <b>${toolType}</b>. Draw shape on map...`;
       }
 
-      document.getElementById("drawFreehandBtn").addEventListener("click", () => startDrawingTool("freehandPolygon"));
       document.getElementById("drawPolygonBtn").addEventListener("click", () => startDrawingTool("polygon"));
       document.getElementById("drawRectangleBtn").addEventListener("click", () => startDrawingTool("rectangle"));
       document.getElementById("drawCircleBtn").addEventListener("click", () => startDrawingTool("circle"));
@@ -550,6 +585,12 @@
         customPolygonGraphicsLayer.removeAll();
         propertyLayer.removeAll();
         enrichedPropertiesForExport = [];
+        isPortfolioVisible = false;
+
+        const toggleBtn = document.getElementById("togglePortfolioBtn");
+        toggleBtn.style.background = "#8e44ad";
+        toggleBtn.innerText = "📍 Toggle Base Portfolio View";
+
         document.getElementById("summaryCard").style.display = "none";
         document.getElementById("summaryPolyCount").innerText = "0";
         document.getElementById("summaryLocCount").innerText = "0";
