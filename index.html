@@ -70,12 +70,12 @@
         Status: <i>Default Mock Test Portfolio Active (1,200 Locs)</i>
       </div>
 
-      <!-- Target Scope Radio Selector for Polygon Analysis (Replaced Toggle Button space) -->
+      <!-- Target Scope Radio Selector for Polygon Analysis -->
       <h4>🎯 Polygon Analysis Target Scope</h4>
       <div class="target-scope-box">
-        <label><input type="radio" name="analysisScope" value="peril" checked> 1) Authoritative Peril Layers</label>
-        <label><input type="radio" name="analysisScope" value="customLayer"> 2) User Loaded Custom Layer</label>
-        <label><input type="radio" name="analysisScope" value="drawnBoundary"> 3) Custom-Drawn Boundary</label>
+        <label><input type="radio" name="analysisScope" value="drawnBoundary" checked> 1) Custom-Drawn Boundary</label>
+        <label><input type="radio" name="analysisScope" value="peril"> 2) Authoritative Peril Layers</label>
+        <label><input type="radio" name="analysisScope" value="customLayer"> 3) User Loaded Custom Layer</label>
       </div>
 
       <!-- Manual drawing tool controllers --> 
@@ -182,9 +182,10 @@
       "esri/widgets/FeatureTable",
       "esri/geometry/geometryEngine",
       "esri/geometry/Point",
+      "esri/geometry/support/webMercatorUtils",
       "esri/layers/GraphicsLayer",
       "esri/layers/Layer"
-    ], function(Map, MapView, FeatureLayer, Graphic, SketchViewModel, FeatureTable, geometryEngine, Point, GraphicsLayer, Layer) {
+    ], function(Map, MapView, FeatureLayer, Graphic, SketchViewModel, FeatureTable, geometryEngine, Point, webMercatorUtils, GraphicsLayer, Layer) {
 
       let activeTableWidget = null;
       let enrichedPropertiesForExport = [];
@@ -326,7 +327,6 @@
           return;
         }
 
-        // Stage portfolio & auto-commit so analysis works immediately
         pendingParsedPortfolio = stagedPortfolio;
         activePortfolio = stagedPortfolio; 
 
@@ -418,10 +418,16 @@
           footprint = geometryEngine.union(targetGeometries);
         }
 
+        // Normalize boundary geometry to WGS84 for accurate spatial comparison
+        let normalizedFootprint = footprint;
+        if (footprint.spatialReference.isWebMercator) {
+          normalizedFootprint = webMercatorUtils.webMercatorToGeographic(footprint);
+        }
+
         // Spatial Containment Test against entire Base Portfolio
         const exposed = activePortfolio.filter(loc => {
           const pt = new Point({ longitude: loc.longitude, latitude: loc.latitude, spatialReference: { wkid: 4326 } });
-          return geometryEngine.contains(footprint, pt);
+          return geometryEngine.contains(normalizedFootprint, pt);
         });
 
         exposed.sort((a, b) => b.tiv - a.tiv);
