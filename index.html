@@ -198,48 +198,19 @@
 
       const WFIGS_SERVICE_URL = "https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Interagency_Perimeters_Current/FeatureServer/0";
 
-      // Render Templates Configuration
-      const uniformRenderer = {
-        type: "simple",
-        symbol: { type: "simple-marker", color: "#d9534f", size: "8px", outline: { color: "white", width: 1 } }
-      };
-
-      const proportionalRenderer = {
-        type: "simple",
-        symbol: { type: "simple-marker", color: "#2c3e50", outline: { color: "white", width: 1 } },
-        visualVariables: [{
-          type: "size", field: "tiv",
-          minDataValue: 1000000, maxDataValue: 100000000,
-          minSize: "6px", maxSize: "28px"
-        }]
-      };
-
-      const tieredRenderer = {
-        type: "class-breaks", field: "tiv",
-        defaultSymbol: { type: "simple-marker", color: "gray", size: "8px" },
-        classBreakInfos: [
-          { minValue: 0, maxValue: 10000000, symbol: { type: "simple-marker", color: "#5cb85c", size: "9px" } },
-          { minValue: 10000001, maxValue: 50000000, symbol: { type: "simple-marker", color: "#f0ad4e", size: "12px" } },
-          { minValue: 50000001, maxValue: 9999999999, symbol: { type: "simple-marker", color: "#d9534f", size: "16px" } }
-        ]
-      };
-
-      // Property Marker Feature Layer
-      const propertyLayer = new FeatureLayer({
-        source: [], objectIdField: "id",
-        fields: [
-          { name: "id", type: "integer" }, { name: "latitude", type: "double" },
-          { name: "longitude", type: "double" }, { name: "tiv", type: "double" },
-          { name: "policy_number", type: "string" }
-        ],
-        renderer: uniformRenderer,
-        popupTemplate: { title: "Policy / LocID: {policy_number}", content: "<b>Total Insured Value (TIV):</b> ${tiv}" }
-      });
-
       // GraphicsLayer for Custom Drawn Boundaries
-      const customPolygonGraphicsLayer = new GraphicsLayer({
-        title: "Custom Drawn Boundaries"
-      });
+      const customPolygonGraphicsLayer = new GraphicsLayer({ title: "Custom Drawn Boundaries" });
+      
+      // GraphicsLayer for Rendering Exposed Asset Point Markers
+      const exposedPointsGraphicsLayer = new GraphicsLayer({ title: "Exposed Portfolio Assets" });
+
+      // Default Marker Symbol Standard
+      const pointSymbol = {
+        type: "simple-marker",
+        color: "#d9534f",
+        size: "9px",
+        outline: { color: "#ffffff", width: 1.5 }
+      };
 
       // Default Mock Portfolio Initialization (1,200 locations)
       function generateMockPortfolio() {
@@ -384,7 +355,7 @@
       // Assemble Map Instance
       const map = new Map({
         basemap: "gray-vector",
-        layers: [wildfires48h, wildfires24h, liveWildfires, stormWarningArchive48h, customPolygonGraphicsLayer, propertyLayer]
+        layers: [wildfires48h, wildfires24h, liveWildfires, stormWarningArchive48h, customPolygonGraphicsLayer, exposedPointsGraphicsLayer]
       });
 
       const view = new MapView({
@@ -450,16 +421,16 @@
         return exposed;
       }
 
-      // Plot Exposed Assets On Map Action
+      // Direct GraphicsLayer Marker Renderer
       document.getElementById("plotTopExposedBtn").addEventListener("click", () => {
         if (lastExposedLocations.length === 0) return;
 
-        // Clear existing features
-        propertyLayer.removeAll();
+        // Clear existing drawn markers
+        exposedPointsGraphicsLayer.removeAll();
         const top1000 = lastExposedLocations.slice(0, 1000);
 
-        // Construct graphics in Web Mercator projection so they render properly on the MapView
-        const localGraphics = top1000.map(loc => {
+        // Construct graphics and project directly to Web Mercator viewport
+        const pointGraphics = top1000.map(loc => {
           const geoPoint = new Point({
             longitude: loc.longitude,
             latitude: loc.latitude,
@@ -469,19 +440,25 @@
 
           return new Graphic({
             geometry: mapPoint,
-            attributes: loc
+            symbol: pointSymbol,
+            attributes: loc,
+            popupTemplate: {
+              title: "Policy / LocID: {policy_number}",
+              content: "<b>Total Insured Value (TIV):</b> ${tiv}"
+            }
           });
         });
 
-        propertyLayer.applyEdits({ addFeatures: localGraphics }).then(() => {
-          document.getElementById("stats").innerHTML = `Plotted top <b>${top1000.length.toLocaleString()}</b> exposed assets on map by TIV.`;
-          
-          // Zoom to extent of exposed markers on map
-          if (localGraphics.length > 0) {
-            const pointsGeom = localGraphics.map(g => g.geometry);
-            view.goTo(pointsGeom);
-          }
-        });
+        // Add graphics to layer
+        exposedPointsGraphicsLayer.addMany(pointGraphics);
+
+        document.getElementById("stats").innerHTML = `Successfully plotted <b>${pointGraphics.length.toLocaleString()}</b> exposed assets on the map.`;
+
+        // Automatically zoom viewport to extent of plotted points
+        if (pointGraphics.length > 0) {
+          const pointsGeom = pointGraphics.map(g => g.geometry);
+          view.goTo(pointsGeom);
+        }
       });
 
       // Target Scope Execution Trigger
@@ -556,6 +533,7 @@
 
       document.getElementById("scrapPolygonsBtn").addEventListener("click", () => {
         customPolygonGraphicsLayer.removeAll();
+        exposedPointsGraphicsLayer.removeAll();
         document.getElementById("stats").innerHTML = "All custom polygon boundaries cleared.";
       });
 
@@ -607,7 +585,7 @@
       // Workspace Reset Handler
       document.getElementById("clearBtn").addEventListener("click", () => {
         customPolygonGraphicsLayer.removeAll();
-        propertyLayer.removeAll();
+        exposedPointsGraphicsLayer.removeAll();
         enrichedPropertiesForExport = [];
         lastExposedLocations = [];
 
@@ -617,14 +595,6 @@
         document.getElementById("tableContainer").style.display = "none";
         if (activeTableWidget) { activeTableWidget.destroy(); activeTableWidget = null; }
         document.getElementById("stats").innerHTML = "Workspace reset complete. Baseline initialized.";
-      });
-
-      document.getElementById("symbologySelect").addEventListener("change", (e) => {
-        const mode = e.target.value;
-        if (mode === "uniform") propertyLayer.renderer = uniformRenderer;
-        if (mode === "proportional") propertyLayer.renderer = proportionalRenderer;
-        if (mode === "tiers") propertyLayer.renderer = tieredRenderer;
-        propertyLayer.refresh();
       });
 
       document.getElementById("refreshLiveWildfireBtn").addEventListener("click", () => {
