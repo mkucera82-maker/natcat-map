@@ -122,7 +122,6 @@
           <input type="checkbox" id="wildfireCheck" checked> Wildfire Progression Suite
         </label>
         
-        <!-- Individual Opacity Sliders for Each View -->
         <div class="slider-container">
           <span>Live View Opacity (Red):</span>
           <input type="range" id="liveWildfireOpacity" min="0" max="1" step="0.1" value="0.8" style="width:55%;">
@@ -137,18 +136,18 @@
         </div>
 
         <button id="refreshLiveWildfireBtn" style="background:#e6a23c; color:white; margin-top:8px;">🔄 Refresh Live Feed</button>
-        <div style="font-size: 10px; color: #909399; margin-top: 4px;">Shows Live (Red), 24h Prior Snapshot (Orange), & 48h Prior Snapshot (Yellow).</div>
       </div>
       
       <div class="hazard-row" style="border-left-color: #f56c6c;">
         <label style="font-weight: bold; font-size: 12px; cursor:pointer;">
-          <input type="checkbox" id="convectiveCheck"> 48h Severe Convective Archive
+          <input type="checkbox" id="convectiveCheck" checked> 48h SPC Convective Archive (15m Polling)
         </label>
         <div class="slider-container">
-          <span>Opacity:</span>
-          <input type="range" id="convectiveOpacity" min="0" max="1" step="0.1" value="0.7" style="width:70%;">
+          <span>Archive Opacity (Purple):</span>
+          <input type="range" id="convectiveOpacity" min="0" max="1" step="0.1" value="0.7" style="width:60%;">
         </div>
-        <div style="font-size: 10px; color: #909399; margin-top: 4px;">Accumulates Tornado & Severe Thunderstorm paths.</div>
+        <button id="refreshConvectiveBtn" style="background:#f56c6c; color:white; margin-top:6px;">🔄 Sync SPC Convective Feed</button>
+        <div style="font-size: 10px; color: #909399; margin-top: 4px;">Auto-polls every 15 mins. Purges entries older than 48h.</div>
       </div>
       
       <!-- Dynamic Paste URL Verification Tool --> 
@@ -199,22 +198,18 @@
       let userCustomConnectedLayer = null;
 
       const WFIGS_SERVICE_URL = "https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Interagency_Perimeters_Current/FeatureServer/0";
+      const SPC_WATCH_WARN_URL = "https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/NWS_Watches_Warnings_v1/FeatureServer/0";
 
-      // GraphicsLayer for Custom Drawn Boundaries
+      // GraphicsLayers for Boundaries & Snapshots
       const customPolygonGraphicsLayer = new GraphicsLayer({ title: "Custom Drawn Boundaries" });
-      
-      // GraphicsLayer for Rendering Exposed Asset Point Markers
       const exposedPointsGraphicsLayer = new GraphicsLayer({ title: "Exposed Portfolio Assets" });
-
-      // GraphicsLayers for Stored Rolling 5 AM PDT Snapshots (Orange for 24h, Yellow for 48h)
-      const wildfire24hGraphicsLayer = new GraphicsLayer({ 
-        title: "Wildfires 24h Snapshot (5 AM PDT - Orange)",
-        opacity: 0.6 
-      });
-
-      const wildfire48hGraphicsLayer = new GraphicsLayer({ 
-        title: "Wildfires 48h Snapshot (5 AM PDT - Yellow)",
-        opacity: 0.4 
+      const wildfire24hGraphicsLayer = new GraphicsLayer({ title: "Wildfires 24h Snapshot (Orange)", opacity: 0.6 });
+      const wildfire48hGraphicsLayer = new GraphicsLayer({ title: "Wildfires 48h Snapshot (Yellow)", opacity: 0.4 });
+      
+      // Dedicated GraphicsLayer for 48h Rolling SPC Convective Archive
+      const spcConvectiveArchiveGraphicsLayer = new GraphicsLayer({ 
+        title: "48h SPC Convective Archive",
+        opacity: 0.7 
       });
 
       // Default Mock Portfolio Initialization (1,200 locations)
@@ -312,7 +307,6 @@
         document.getElementById("portfolioStatusText").innerHTML = `Parsed <b>${fileName}</b> (${stagedPortfolio.length.toLocaleString()} Locs). Click 'Save' to confirm.`;
       }
 
-      // Commit Pending Portfolio to Memory
       document.getElementById("savePortfolioBtn").addEventListener("click", () => {
         if (!pendingParsedPortfolio && activePortfolio.length === 0) return;
         if (pendingParsedPortfolio) {
@@ -325,9 +319,93 @@
         document.getElementById("stats").innerHTML = `Base Portfolio saved! <b>${activePortfolio.length.toLocaleString()}</b> locations set in active memory.`;
       });
 
-      // --- ROLLING 5 AM PDT SNAPSHOT ENGINE ---
+      // --- ROLLING 48H SPC CONVECTIVE ARCHIVE & 15-MIN POLLING ENGINE ---
+      async function pollAndSyncSpcConvectiveArchive() {
+        try {
+          const tempLayer = new FeatureLayer({ url: SPC_WATCH_WARN_URL });
+          const query = tempLayer.createQuery();
+          // Filter for Tornado & Severe Convective Watches/Warnings
+          query.where = "EVENT IN ('Tornado Watch', 'Severe Thunderstorm Watch', 'Tornado Warning', 'Severe Thunderstorm Warning')";
+          query.returnGeometry = true;
+          query.outFields = ["*"];
+
+          const results = await tempLayer.queryFeatures(query);
+          const currentFeatures = results.features;
+          if (!currentFeatures || currentFeatures.length === 0) return;
+
+          let archiveStore = JSON.parse(localStorage.getItem("spc_convective_archive_48h") || "[]");
+          const nowMs = Date.now();
+          const fortyEightHoursMs = 48 * 60 * 60 * 1000;
+
+          // 1. Filter out entries older than 48 hours
+          archiveStore = archiveStore.filter(item => (nowMs - item.downloadTimestamp) <= fortyEightHoursMs);
+
+          // 2. Add newly identified unique features
+          const existingIds = new Set(archiveStore.map(i => i.attributes.OBJECTID || i.attributes.EVENTID));
+          
+          let addedCount = 0;
+          currentFeatures.forEach(f => {
+            const featId = f.attributes.OBJECTID || f.attributes.EVENTID;
+            if (featId && !existingIds.has(featId)) {
+              archiveStore.push({
+                downloadTimestamp: nowMs,
+                attributes: f.attributes,
+                geometry: f.geometry.toJSON()
+              });
+              addedCount++;
+            }
+          });
+
+          localStorage.setItem("spc_convective_archive_48h", JSON.stringify(archiveStore));
+          renderSpcArchiveToLayer(archiveStore);
+
+          if (addedCount > 0) {
+            document.getElementById("stats").innerHTML = `SPC Convective Feed Synced: Downloaded <b>${addedCount}</b> new severe weather polygons. Archive active size: <b>${archiveStore.length}</b>.`;
+          }
+        } catch (err) {
+          console.error("Error polling SPC convective archive:", err);
+        }
+      }
+
+      function renderSpcArchiveToLayer(archiveStore) {
+        spcConvectiveArchiveGraphicsLayer.removeAll();
+        if (!archiveStore || archiveStore.length === 0) return;
+
+        const convectiveSymbol = {
+          type: "simple-fill",
+          color: [155, 89, 182, 0.35], // Distinct Purple fill for Convective Archive
+          outline: { color: "#8e44ad", width: 1.5, style: "solid" }
+        };
+
+        const graphics = archiveStore.map(item => {
+          const geom = esri.geometry.jsonUtils ? esri.geometry.jsonUtils.fromJSON(item.geometry) : item.geometry;
+          return new Graphic({
+            geometry: geom,
+            symbol: convectiveSymbol,
+            attributes: item.attributes,
+            popupTemplate: {
+              title: "{EVENT}",
+              content: "<b>Issued:</b> {ISSUED}<br/><b>Expires:</b> {EXPIRATION}<br/><i>(Archived in 48h SPC Convective Stream)</i>"
+            }
+          });
+        });
+
+        // Add graphics safely
+        graphics.forEach(g => {
+          if(g.geometry) { spcConvectiveArchiveGraphicsLayer.add(g); }
+        });
+      }
+
+      // Load existing archive on startup
+      const initialArchive = JSON.parse(localStorage.getItem("spc_convective_archive_48h") || "[]");
+      renderSpcArchiveToLayer(initialArchive);
+
+      // Set up 15-Minute Polling Timer (900,000 milliseconds)
+      setInterval(pollAndSyncSpcConvectiveArchive, 15 * 60 * 1000);
+
+      // --- ROLLING 5 AM PDT SNAPSHOT ENGINE FOR WILDFIRES ---
       function getDateKey(dateObj) {
-        return dateObj.toISOString().split('T')[0]; // YYYY-MM-DD
+        return dateObj.toISOString().split('T')[0];
       }
 
       function getPDTDateString(daysAgo) {
@@ -356,30 +434,16 @@
             localStorage.setItem(`snapshot_${todayKey}_0500`, JSON.stringify(serializedFeatures));
           }
 
-          let snapshot24h = localStorage.getItem(`snapshot_${yesterdayKey}_0500`);
-          if (!snapshot24h) {
-            snapshot24h = localStorage.getItem(`snapshot_${todayKey}_0500`);
-          }
+          let snapshot24h = localStorage.getItem(`snapshot_${yesterdayKey}_0500`) || localStorage.getItem(`snapshot_${todayKey}_0500`);
+          let snapshot48h = localStorage.getItem(`snapshot_${dayBeforeKey}_0500`) || snapshot24h;
 
-          let snapshot48h = localStorage.getItem(`snapshot_${dayBeforeKey}_0500`);
-          if (!snapshot48h) {
-            snapshot48h = snapshot24h || localStorage.getItem(`snapshot_${todayKey}_0500`);
-          }
-
-          // 24h Snapshot rendered in ORANGE
           renderSnapshotToLayer(snapshot24h, wildfire24hGraphicsLayer, {
-            type: "simple-fill",
-            color: [230, 162, 60, 0.4],
-            outline: { color: "#e6a23c", width: 1.5, style: "solid" }
+            type: "simple-fill", color: [230, 162, 60, 0.4], outline: { color: "#e6a23c", width: 1.5 }
           });
 
-          // 48h Snapshot rendered in YELLOW
           renderSnapshotToLayer(snapshot48h, wildfire48hGraphicsLayer, {
-            type: "simple-fill",
-            color: [230, 204, 40, 0.4],
-            outline: { color: "#e6c229", width: 1.5, style: "solid" }
+            type: "simple-fill", color: [230, 204, 40, 0.4], outline: { color: "#e6c229", width: 1.5 }
           });
-
         } catch (err) {
           console.error("Error managing rolling snapshots:", err);
         }
@@ -394,7 +458,7 @@
         targetLayer.addMany(graphics);
       }
 
-      // Live Feature Layer (Red)
+      // Live Feature Layer
       const liveWildfires = new FeatureLayer({
         url: WFIGS_SERVICE_URL, refreshInterval: 5, visible: true, title: "Current Active Wildfires (Red)",
         opacity: 0.8,
@@ -405,19 +469,10 @@
         manageRollingSnapshots(liveWildfires);
       });
 
-      const stormWarningArchive48h = new FeatureLayer({
-        url: "https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/NWS_Watches_Warnings_Advisories_Archive/FeatureServer/0",
-        refreshInterval: 10, visible: false, title: "48h Severe Convective Warnings Archive",
-        opacity: 0.7,
-        definitionExpression: "1=1",
-        outFields: ["*"],
-        popupTemplate: { title: "{EVENT}", content: "<b>Issued:</b> {ISSUED}<br/><b>Expired:</b> {ENDED}" }
-      });
-
-      // Assemble Map Instance
+      // Assemble Map Instance (With SPC Convective Archive Layer Included)
       const map = new Map({
         basemap: "gray-vector",
-        layers: [wildfire48hGraphicsLayer, wildfire24hGraphicsLayer, liveWildfires, stormWarningArchive48h, customPolygonGraphicsLayer, exposedPointsGraphicsLayer]
+        layers: [spcConvectiveArchiveGraphicsLayer, wildfire48hGraphicsLayer, wildfire24hGraphicsLayer, liveWildfires, customPolygonGraphicsLayer, exposedPointsGraphicsLayer]
       });
 
       const view = new MapView({
@@ -479,7 +534,6 @@
         return exposed;
       }
 
-      // Direct, Simplified GraphicsLayer Marker Renderer
       document.getElementById("plotTopExposedBtn").addEventListener("click", () => {
         if (lastExposedLocations.length === 0) return;
 
@@ -487,31 +541,19 @@
         const top1000 = lastExposedLocations.slice(0, 1000);
 
         const pointSymbol = {
-          type: "simple-marker",
-          style: "circle",
-          color: "#e74c3c",
-          size: "10px",
-          outline: { color: "#ffffff", width: 1.5 }
+          type: "simple-marker", style: "circle", color: "#e74c3c", size: "10px", outline: { color: "#ffffff", width: 1.5 }
         };
 
         const pointGraphics = top1000.map(loc => {
           return new Graphic({
-            geometry: new Point({
-              longitude: loc.longitude,
-              latitude: loc.latitude,
-              spatialReference: { wkid: 4326 }
-            }),
+            geometry: new Point({ longitude: loc.longitude, latitude: loc.latitude, spatialReference: { wkid: 4326 } }),
             symbol: pointSymbol,
             attributes: loc,
-            popupTemplate: {
-              title: "Policy / LocID: {policy_number}",
-              content: "<b>Total Insured Value (TIV):</b> ${tiv}"
-            }
+            popupTemplate: { title: "Policy / LocID: {policy_number}", content: "<b>Total Insured Value (TIV):</b> ${tiv}" }
           });
         });
 
         exposedPointsGraphicsLayer.addMany(pointGraphics);
-
         document.getElementById("stats").innerHTML = `Successfully plotted <b>${pointGraphics.length.toLocaleString()}</b> exposed assets on the map.`;
 
         if (pointGraphics.length > 0) {
@@ -519,17 +561,22 @@
         }
       });
 
-      // Individual Opacity Controls for Wildfire Progression Views
+      // Opacity Controllers
       document.getElementById("liveWildfireOpacity").addEventListener("input", (e) => {
         liveWildfires.opacity = parseFloat(e.target.value);
       });
-
       document.getElementById("wildfire24hOpacity").addEventListener("input", (e) => {
         wildfire24hGraphicsLayer.opacity = parseFloat(e.target.value);
       });
-
       document.getElementById("wildfire48hOpacity").addEventListener("input", (e) => {
         wildfire48hGraphicsLayer.opacity = parseFloat(e.target.value);
+      });
+      document.getElementById("convectiveOpacity").addEventListener("input", (e) => {
+        spcConvectiveArchiveGraphicsLayer.opacity = parseFloat(e.target.value);
+      });
+
+      document.getElementById("refreshConvectiveBtn").addEventListener("click", () => {
+        pollAndSyncSpcConvectiveArchive();
       });
 
       // Target Scope Execution Trigger
@@ -554,7 +601,7 @@
             }
             computeExposureForGeometries(geoms, "Authoritative Peril Suite");
           }).catch(() => {
-            alert("Error querying Authoritative Peril Layer. Ensure layer is populated and active.");
+            alert("Error querying Authoritative Peril Layer.");
           });
 
         } else if (selectedScope === "customLayer") {
@@ -570,7 +617,7 @@
             }
             computeExposureForGeometries(geoms, "User Loaded Custom Layer");
           }).catch(() => {
-            alert("Unable to query user custom layer. Confirm service connectivity.");
+            alert("Unable to query user custom layer.");
           });
         }
       });
@@ -608,7 +655,6 @@
         document.getElementById("stats").innerHTML = "All custom polygon boundaries cleared.";
       });
 
-      // Attribute Table Grid Component
       function initializeAttributeTable(targetLayer) {
         const tableContainer = document.getElementById("tableContainer");
         const activeNameLabel = document.getElementById("activeTableName");
@@ -653,7 +699,6 @@
       document.getElementById("drawRectangleBtn").addEventListener("click", () => startDrawingTool("rectangle"));
       document.getElementById("drawCircleBtn").addEventListener("click", () => startDrawingTool("circle"));
 
-      // Workspace Reset Handler
       document.getElementById("clearBtn").addEventListener("click", () => {
         customPolygonGraphicsLayer.removeAll();
         exposedPointsGraphicsLayer.removeAll();
@@ -678,19 +723,12 @@
         liveWildfires.visible = vis; 
         wildfire24hGraphicsLayer.visible = vis; 
         wildfire48hGraphicsLayer.visible = vis;
-        if(vis) { initializeAttributeTable(liveWildfires); }
       });
 
       document.getElementById("convectiveCheck").addEventListener("change", (e) => {
-        stormWarningArchive48h.visible = e.target.checked;
-        if(e.target.checked) { initializeAttributeTable(stormWarningArchive48h); }
+        spcConvectiveArchiveGraphicsLayer.visible = e.target.checked;
       });
 
-      document.getElementById("convectiveOpacity").addEventListener("input", (e) => {
-        stormWarningArchive48h.opacity = parseFloat(e.target.value);
-      });
-
-      // Secure Custom REST URL Loader
       document.getElementById("loadCustomLayerBtn").addEventListener("click", () => {
         const urlStr = document.getElementById("customUrlInput").value.trim();
         if (!urlStr.toLowerCase().startsWith("https://")) {
@@ -708,7 +746,6 @@
         });
       });
 
-      // CSV Export Engine
       document.getElementById("exportBtn").addEventListener("click", () => {
         if(lastExposedLocations.length === 0) return;
 
