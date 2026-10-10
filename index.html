@@ -124,20 +124,20 @@
         
         <!-- Individual Opacity Sliders for Each View -->
         <div class="slider-container">
-          <span>Live View Opacity:</span>
-          <input type="range" id="liveWildfireOpacity" min="0" max="1" step="0.1" value="0.8" style="width:60%;">
+          <span>Live View Opacity (Red):</span>
+          <input type="range" id="liveWildfireOpacity" min="0" max="1" step="0.1" value="0.8" style="width:55%;">
         </div>
         <div class="slider-container">
-          <span>24h Snapshot (5 AM PDT):</span>
-          <input type="range" id="wildfire24hOpacity" min="0" max="1" step="0.1" value="0.6" style="width:60%;">
+          <span>24h Snapshot Opacity (Orange):</span>
+          <input type="range" id="wildfire24hOpacity" min="0" max="1" step="0.1" value="0.6" style="width:55%;">
         </div>
         <div class="slider-container">
-          <span>48h Snapshot (5 AM PDT):</span>
-          <input type="range" id="wildfire48hOpacity" min="0" max="1" step="0.1" value="0.4" style="width:60%;">
+          <span>48h Snapshot Opacity (Yellow):</span>
+          <input type="range" id="wildfire48hOpacity" min="0" max="1" step="0.1" value="0.4" style="width:55%;">
         </div>
 
         <button id="refreshLiveWildfireBtn" style="background:#e6a23c; color:white; margin-top:8px;">🔄 Refresh Live Feed</button>
-        <div style="font-size: 10px; color: #909399; margin-top: 4px;">Shows Live (Red), 24h Prior 5 AM Snapshot (Orange), & 48h Prior 5 AM Snapshot (Yellow).</div>
+        <div style="font-size: 10px; color: #909399; margin-top: 4px;">Shows Live (Red), 24h Prior Snapshot (Orange), & 48h Prior Snapshot (Yellow).</div>
       </div>
       
       <div class="hazard-row" style="border-left-color: #f56c6c;">
@@ -206,14 +206,14 @@
       // GraphicsLayer for Rendering Exposed Asset Point Markers
       const exposedPointsGraphicsLayer = new GraphicsLayer({ title: "Exposed Portfolio Assets" });
 
-      // GraphicsLayers for Stored Rolling 5 AM PDT Snapshots
+      // GraphicsLayers for Stored Rolling 5 AM PDT Snapshots (Orange for 24h, Yellow for 48h)
       const wildfire24hGraphicsLayer = new GraphicsLayer({ 
-        title: "Wildfires 24h Snapshot (5 AM PDT)",
+        title: "Wildfires 24h Snapshot (5 AM PDT - Orange)",
         opacity: 0.6 
       });
 
       const wildfire48hGraphicsLayer = new GraphicsLayer({ 
-        title: "Wildfires 48h Snapshot (5 AM PDT)",
+        title: "Wildfires 48h Snapshot (5 AM PDT - Yellow)",
         opacity: 0.4 
       });
 
@@ -347,41 +347,37 @@
           const features = results.features;
           if (!features || features.length === 0) return;
 
-          // Serialize features to JSON
           const serializedFeatures = features.map(f => f.toJSON());
           const todayKey = getPDTDateString(0);
           const yesterdayKey = getPDTDateString(1);
           const dayBeforeKey = getPDTDateString(2);
 
-          // Save today's snapshot if not present
           if (!localStorage.getItem(`snapshot_${todayKey}_0500`)) {
             localStorage.setItem(`snapshot_${todayKey}_0500`, JSON.stringify(serializedFeatures));
           }
 
-          // Load 24h snapshot (yesterday at 5 AM)
           let snapshot24h = localStorage.getItem(`snapshot_${yesterdayKey}_0500`);
           if (!snapshot24h) {
-            // Fallback to today if yesterday isn't stored yet
             snapshot24h = localStorage.getItem(`snapshot_${todayKey}_0500`);
           }
 
-          // Load 48h snapshot (2 days ago at 5 AM)
           let snapshot48h = localStorage.getItem(`snapshot_${dayBeforeKey}_0500`);
           if (!snapshot48h) {
             snapshot48h = snapshot24h || localStorage.getItem(`snapshot_${todayKey}_0500`);
           }
 
-          // Render into GraphicsLayers with distinct symbology
+          // 24h Snapshot rendered in ORANGE
           renderSnapshotToLayer(snapshot24h, wildfire24hGraphicsLayer, {
             type: "simple-fill",
-            color: [230, 162, 60, 0.3],
-            outline: { color: "#e6a23c", width: 1.5, style: "dash" }
+            color: [230, 162, 60, 0.4],
+            outline: { color: "#e6a23c", width: 1.5, style: "solid" }
           });
 
+          // 48h Snapshot rendered in YELLOW
           renderSnapshotToLayer(snapshot48h, wildfire48hGraphicsLayer, {
             type: "simple-fill",
-            color: [144, 147, 153, 0.2],
-            outline: { color: "#909399", width: 1, style: "dot" }
+            color: [230, 204, 40, 0.4],
+            outline: { color: "#e6c229", width: 1.5, style: "solid" }
           });
 
         } catch (err) {
@@ -398,9 +394,9 @@
         targetLayer.addMany(graphics);
       }
 
-      // Live Feature Layer
+      // Live Feature Layer (Red)
       const liveWildfires = new FeatureLayer({
-        url: WFIGS_SERVICE_URL, refreshInterval: 5, visible: true, title: "Current Active Wildfires",
+        url: WFIGS_SERVICE_URL, refreshInterval: 5, visible: true, title: "Current Active Wildfires (Red)",
         opacity: 0.8,
         symbol: { type: "simple-fill", color: [245, 108, 108, 0.4], outline: { color: "#f56c6c", width: 2 } }
       });
@@ -418,7 +414,7 @@
         popupTemplate: { title: "{EVENT}", content: "<b>Issued:</b> {ISSUED}<br/><b>Expired:</b> {ENDED}" }
       });
 
-      // Assemble Map Instance (Including Rolling Snapshot Layers)
+      // Assemble Map Instance
       const map = new Map({
         basemap: "gray-vector",
         layers: [wildfire48hGraphicsLayer, wildfire24hGraphicsLayer, liveWildfires, stormWarningArchive48h, customPolygonGraphicsLayer, exposedPointsGraphicsLayer]
