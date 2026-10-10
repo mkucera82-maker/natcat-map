@@ -60,7 +60,7 @@
       <h4>📁 Portfolio Data Management</h4>
       <input type="file" id="portfolioFileInput" accept=".csv, .tsv, .txt" />
       <div style="font-size: 10px; color: #909399; margin-top: -4px; margin-bottom: 8px;">
-        Upload CSV export from Google Sheets with columns: <b>Location ID/Policy, Latitude, Longitude, TIV</b>.
+        Upload CSV export with columns: <b>LocID / Policy, Latitude, Longitude, TIV</b>.
       </div>
 
       <!-- Portfolio Visualization Toggle -->
@@ -220,7 +220,7 @@
           { name: "policy_number", type: "string" }
         ],
         renderer: uniformRenderer,
-        popupTemplate: { title: "Policy: {policy_number}", content: "<b>Total Insured Value (TIV):</b> ${tiv}" }
+        popupTemplate: { title: "Policy / LocID: {policy_number}", content: "<b>Total Insured Value (TIV):</b> ${tiv}" }
       });
 
       // GraphicsLayer to store multiple active custom drawn polygons
@@ -251,7 +251,7 @@
 
       activePortfolio = generateMockPortfolio();
 
-      // --- 4. Portfolio Map Rendering & CSV Uploader Engine ---
+      // --- 4. Portfolio Map Rendering & Robust CSV Uploader Engine ---
       function renderBasePortfolioOnMap() {
         propertyLayer.removeAll();
         if (!isPortfolioVisible) return;
@@ -305,8 +305,12 @@
           return;
         }
 
-        const header = lines[0].toLowerCase().split(/,|\t/);
-        let idIdx = header.findIndex(h => h.includes("id") || h.includes("policy") || h.includes("location"));
+        // Clean headers: remove trailing/leading whitespace and quotes
+        const rawHeaders = lines[0].split(/,|\t/);
+        const header = rawHeaders.map(h => h.trim().toLowerCase().replace(/^["']|["']$/g, ''));
+
+        // Robust column matching
+        let idIdx = header.findIndex(h => h.includes("locid") || h.includes("location") || h.includes("policy") || h.includes("id"));
         let latIdx = header.findIndex(h => h.includes("lat"));
         let lonIdx = header.findIndex(h => h.includes("lon") || h.includes("lng"));
         let tivIdx = header.findIndex(h => h.includes("tiv") || h.includes("value"));
@@ -320,18 +324,25 @@
         let recordCounter = 1;
 
         for (let i = 1; i < lines.length; i++) {
-          if (!lines[i].trim()) continue;
-          const cols = lines[i].split(/,|\t/);
+          const lineStr = lines[i].trim();
+          if (!lineStr) continue;
 
-          const lat = parseFloat(cols[latIdx]);
-          const lon = parseFloat(cols[lonIdx]);
-          const tiv = parseFloat(cols[tivIdx] ? cols[tivIdx].replace(/[\$,]/g, '') : "0");
-          const policy = idIdx !== -1 && cols[idIdx] ? cols[idIdx].trim() : `LOC-${recordCounter}`;
+          // Split line handling comma values
+          const cols = lineStr.split(/,|\t/);
+
+          const rawLat = cols[latIdx] ? cols[latIdx].trim().replace(/["']/g, '') : "";
+          const rawLon = cols[lonIdx] ? cols[lonIdx].trim().replace(/["']/g, '') : "";
+          const rawTiv = cols[tivIdx] ? cols[tivIdx].trim().replace(/[\$,\r"]/g, '') : "0";
+          const rawPolicy = (idIdx !== -1 && cols[idIdx]) ? cols[idIdx].trim().replace(/["']/g, '') : `LOC-${recordCounter}`;
+
+          const lat = parseFloat(rawLat);
+          const lon = parseFloat(rawLon);
+          const tiv = parseFloat(rawTiv);
 
           if (!isNaN(lat) && !isNaN(lon) && !isNaN(tiv)) {
             newPortfolio.push({
               id: recordCounter++,
-              policy_number: policy,
+              policy_number: rawPolicy,
               latitude: lat,
               longitude: lon,
               tiv: tiv
@@ -340,7 +351,7 @@
         }
 
         if (newPortfolio.length === 0) {
-          alert("No valid locations parsed from file.");
+          alert("No valid locations parsed from file. Check format.");
           return;
         }
 
@@ -420,10 +431,19 @@
           return geometryEngine.contains(boundaryGeometry, pt);
         });
 
+        propertyLayer.removeAll();
+
+        if (exposedLocations.length === 0) {
+          document.getElementById("stats").innerHTML = `Analysis Complete: <b>0</b> locations exposed within the custom boundary across active base portfolio.`;
+          enrichedPropertiesForExport = [];
+          document.getElementById("exportBtn").disabled = true;
+          document.getElementById("exportBtn").style.opacity = "0.5";
+          return [];
+        }
+
         exposedLocations.sort((a, b) => b.tiv - a.tiv);
 
         const mapLocations = exposedLocations.slice(0, 1000);
-        propertyLayer.removeAll();
 
         const localGraphics = mapLocations.map(loc => new Graphic({
           geometry: { type: "point", longitude: loc.longitude, latitude: loc.latitude },
@@ -564,7 +584,7 @@
         });
       }
 
-      // --- 12. Drawing Tool Event Binding (Freehand option removed) ---
+      // --- 12. Drawing Tool Event Binding ---
       const drawingToolsDiv = document.getElementById("drawingTools");
       
       document.getElementById("drawMenuToggleBtn").addEventListener("click", () => {
@@ -654,7 +674,7 @@
       document.getElementById("exportBtn").addEventListener("click", () => {
         if(enrichedPropertiesForExport.length === 0) return;
 
-        let csvContent = "data:text/csv;charset=utf-8,Location ID,Latitude,Longitude,TIV,Exposed Hazard Overlay\n";
+        let csvContent = "data:text/csv;charset=utf-8,LocID/Policy,Latitude,Longitude,TIV,Exposed Hazard Overlay\n";
         enrichedPropertiesForExport.forEach(row => {
           csvContent += `${row.policy_number},${row.latitude},${row.longitude},${row.tiv},"${row.Exposed_Hazard_Context}"\n`;
         });
