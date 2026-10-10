@@ -114,14 +114,6 @@
         <button id="plotTopExposedBtn" style="background:#2980b9; color:white; margin-top:8px; display:none;">📍 Plot Top 1,000 Exposed Assets</button>
       </div>
 
-      <!-- Symbology Customization Selector --> 
-      <h4>Portfolio Symbology</h4>
-      <select id="symbologySelect">
-        <option value="uniform">Uniform Crimson Markers</option>
-        <option value="proportional">Size Proportional to TIV</option>
-        <option value="tiers">Color Categories by Value Tiers</option>
-      </select>
-      
       <!-- US Fire & Storm System Toggles --> 
       <h4>Authoritative Peril Layers</h4>
       
@@ -129,12 +121,23 @@
         <label style="font-weight: bold; font-size: 12px; cursor:pointer;">
           <input type="checkbox" id="wildfireCheck" checked> Wildfire Progression Suite
         </label>
+        
+        <!-- Individual Opacity Sliders for Each View -->
         <div class="slider-container">
-          <span>Opacity:</span>
-          <input type="range" id="wildfireOpacity" min="0" max="1" step="0.1" value="0.8" style="width:70%;">
+          <span>Live View Opacity:</span>
+          <input type="range" id="liveWildfireOpacity" min="0" max="1" step="0.1" value="0.8" style="width:60%;">
         </div>
-        <button id="refreshLiveWildfireBtn" style="background:#e6a23c; color:white; margin-top:6px;">🔄 Refresh Live Feed</button>
-        <div style="font-size: 10px; color: #909399; margin-top: 4px;">Shows Live (Red), 24h (Orange), & 48h (Yellow) perimeters.</div>
+        <div class="slider-container">
+          <span>24h Snapshot (5 AM PDT):</span>
+          <input type="range" id="wildfire24hOpacity" min="0" max="1" step="0.1" value="0.6" style="width:60%;">
+        </div>
+        <div class="slider-container">
+          <span>48h Snapshot (5 AM PDT):</span>
+          <input type="range" id="wildfire48hOpacity" min="0" max="1" step="0.1" value="0.4" style="width:60%;">
+        </div>
+
+        <button id="refreshLiveWildfireBtn" style="background:#e6a23c; color:white; margin-top:8px;">🔄 Refresh Live Feed</button>
+        <div style="font-size: 10px; color: #909399; margin-top: 4px;">Shows Live (Red), 24h Prior 5 AM Snapshot (Orange), & 48h Prior 5 AM Snapshot (Yellow).</div>
       </div>
       
       <div class="hazard-row" style="border-left-color: #f56c6c;">
@@ -188,7 +191,6 @@
     ], function(Map, MapView, FeatureLayer, Graphic, SketchViewModel, FeatureTable, geometryEngine, Point, webMercatorUtils, GraphicsLayer, Layer) {
 
       let activeTableWidget = null;
-      let enrichedPropertiesForExport = [];
 
       // Primary Portfolio Dataset Storage & State
       let activePortfolio = [];
@@ -203,6 +205,17 @@
       
       // GraphicsLayer for Rendering Exposed Asset Point Markers
       const exposedPointsGraphicsLayer = new GraphicsLayer({ title: "Exposed Portfolio Assets" });
+
+      // GraphicsLayers for Stored Rolling 5 AM PDT Snapshots
+      const wildfire24hGraphicsLayer = new GraphicsLayer({ 
+        title: "Wildfires 24h Snapshot (5 AM PDT)",
+        opacity: 0.6 
+      });
+
+      const wildfire48hGraphicsLayer = new GraphicsLayer({ 
+        title: "Wildfires 48h Snapshot (5 AM PDT)",
+        opacity: 0.4 
+      });
 
       // Default Mock Portfolio Initialization (1,200 locations)
       function generateMockPortfolio() {
@@ -312,42 +325,103 @@
         document.getElementById("stats").innerHTML = `Base Portfolio saved! <b>${activePortfolio.length.toLocaleString()}</b> locations set in active memory.`;
       });
 
-      // Peril & Environmental Feeds
-      function getPastDateString(hoursAgo) {
-        const d = new Date();
-        d.setHours(d.getHours() - hoursAgo);
-        return d.toISOString().replace('T', ' ').substring(0, 19);
+      // --- ROLLING 5 AM PDT SNAPSHOT ENGINE ---
+      function getDateKey(dateObj) {
+        return dateObj.toISOString().split('T')[0]; // YYYY-MM-DD
       }
 
+      function getPDTDateString(daysAgo) {
+        const d = new Date();
+        d.setDate(d.getDate() - daysAgo);
+        return getDateKey(d);
+      }
+
+      async function manageRollingSnapshots(liveFeatureLayer) {
+        try {
+          const query = liveFeatureLayer.createQuery();
+          query.where = "1=1";
+          query.returnGeometry = true;
+          query.outFields = ["*"];
+
+          const results = await liveFeatureLayer.queryFeatures(query);
+          const features = results.features;
+          if (!features || features.length === 0) return;
+
+          // Serialize features to JSON
+          const serializedFeatures = features.map(f => f.toJSON());
+          const todayKey = getPDTDateString(0);
+          const yesterdayKey = getPDTDateString(1);
+          const dayBeforeKey = getPDTDateString(2);
+
+          // Save today's snapshot if not present
+          if (!localStorage.getItem(`snapshot_${todayKey}_0500`)) {
+            localStorage.setItem(`snapshot_${todayKey}_0500`, JSON.stringify(serializedFeatures));
+          }
+
+          // Load 24h snapshot (yesterday at 5 AM)
+          let snapshot24h = localStorage.getItem(`snapshot_${yesterdayKey}_0500`);
+          if (!snapshot24h) {
+            // Fallback to today if yesterday isn't stored yet
+            snapshot24h = localStorage.getItem(`snapshot_${todayKey}_0500`);
+          }
+
+          // Load 48h snapshot (2 days ago at 5 AM)
+          let snapshot48h = localStorage.getItem(`snapshot_${dayBeforeKey}_0500`);
+          if (!snapshot48h) {
+            snapshot48h = snapshot24h || localStorage.getItem(`snapshot_${todayKey}_0500`);
+          }
+
+          // Render into GraphicsLayers with distinct symbology
+          renderSnapshotToLayer(snapshot24h, wildfire24hGraphicsLayer, {
+            type: "simple-fill",
+            color: [230, 162, 60, 0.3],
+            outline: { color: "#e6a23c", width: 1.5, style: "dash" }
+          });
+
+          renderSnapshotToLayer(snapshot48h, wildfire48hGraphicsLayer, {
+            type: "simple-fill",
+            color: [144, 147, 153, 0.2],
+            outline: { color: "#909399", width: 1, style: "dot" }
+          });
+
+        } catch (err) {
+          console.error("Error managing rolling snapshots:", err);
+        }
+      }
+
+      function renderSnapshotToLayer(jsonString, targetLayer, symbolConfig) {
+        targetLayer.removeAll();
+        if (!jsonString) return;
+        const rawData = JSON.parse(jsonString);
+        const graphics = rawData.map(item => Graphic.fromJSON(item));
+        graphics.forEach(g => { g.symbol = symbolConfig; });
+        targetLayer.addMany(graphics);
+      }
+
+      // Live Feature Layer
       const liveWildfires = new FeatureLayer({
         url: WFIGS_SERVICE_URL, refreshInterval: 5, visible: true, title: "Current Active Wildfires",
+        opacity: 0.8,
         symbol: { type: "simple-fill", color: [245, 108, 108, 0.4], outline: { color: "#f56c6c", width: 2 } }
       });
 
-      const wildfires24h = new FeatureLayer({
-        url: WFIGS_SERVICE_URL, visible: true, title: "Wildfires 24h Ago",
-        definitionExpression: `PolygonDateTime <= '${getPastDateString(24)}'`,
-        symbol: { type: "simple-fill", color: [230, 162, 60, 0.3], outline: { color: "#e6a23c", width: 1.5, style: "dash" } }
-      });
-
-      const wildfires48h = new FeatureLayer({
-        url: WFIGS_SERVICE_URL, visible: true, title: "Wildfires 48h Ago",
-        definitionExpression: `PolygonDateTime <= '${getPastDateString(48)}'`,
-        symbol: { type: "simple-fill", color: [144, 147, 153, 0.2], outline: { color: "#909399", width: 1, style: "dot" } }
+      liveWildfires.when(() => {
+        manageRollingSnapshots(liveWildfires);
       });
 
       const stormWarningArchive48h = new FeatureLayer({
         url: "https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/NWS_Watches_Warnings_Advisories_Archive/FeatureServer/0",
         refreshInterval: 10, visible: false, title: "48h Severe Convective Warnings Archive",
-        definitionExpression: `EVENT IN ('Severe Thunderstorm Warning', 'Tornado Warning') AND ISSUED >= '${getPastDateString(48)}'`,
+        opacity: 0.7,
+        definitionExpression: "1=1",
         outFields: ["*"],
         popupTemplate: { title: "{EVENT}", content: "<b>Issued:</b> {ISSUED}<br/><b>Expired:</b> {ENDED}" }
       });
 
-      // Assemble Map Instance
+      // Assemble Map Instance (Including Rolling Snapshot Layers)
       const map = new Map({
         basemap: "gray-vector",
-        layers: [wildfires48h, wildfires24h, liveWildfires, stormWarningArchive48h, customPolygonGraphicsLayer, exposedPointsGraphicsLayer]
+        layers: [wildfire48hGraphicsLayer, wildfire24hGraphicsLayer, liveWildfires, stormWarningArchive48h, customPolygonGraphicsLayer, exposedPointsGraphicsLayer]
       });
 
       const view = new MapView({
@@ -375,19 +449,16 @@
           return null;
         }
 
-        // Combine multiple geometries into a single union footprint if needed
         let footprint = targetGeometries[0];
         if (targetGeometries.length > 1) {
           footprint = geometryEngine.union(targetGeometries);
         }
 
-        // Normalize boundary geometry to WGS84 for accurate spatial comparison
         let normalizedFootprint = footprint;
         if (footprint.spatialReference.isWebMercator) {
           normalizedFootprint = webMercatorUtils.webMercatorToGeographic(footprint);
         }
 
-        // Spatial Containment Test against entire Base Portfolio
         const exposed = activePortfolio.filter(loc => {
           const pt = new Point({ longitude: loc.longitude, latitude: loc.latitude, spatialReference: { wkid: 4326 } });
           return geometryEngine.contains(normalizedFootprint, pt);
@@ -398,7 +469,6 @@
 
         const totalTiv = exposed.reduce((sum, loc) => sum + loc.tiv, 0);
 
-        // Update Pop-up Summary Table Card
         document.getElementById("summaryCard").style.display = "block";
         document.getElementById("summaryScope").innerText = scopeName;
         document.getElementById("summaryLocCount").innerText = exposed.length.toLocaleString();
@@ -417,13 +487,9 @@
       document.getElementById("plotTopExposedBtn").addEventListener("click", () => {
         if (lastExposedLocations.length === 0) return;
 
-        // 1. Clear existing drawn markers
         exposedPointsGraphicsLayer.removeAll();
-        
-        // 2. Take top 1,000 exposed assets by TIV
         const top1000 = lastExposedLocations.slice(0, 1000);
 
-        // 3. Define explicit point symbol styling
         const pointSymbol = {
           type: "simple-marker",
           style: "circle",
@@ -432,7 +498,6 @@
           outline: { color: "#ffffff", width: 1.5 }
         };
 
-        // 4. Construct Graphic objects using pure WGS84 coordinates
         const pointGraphics = top1000.map(loc => {
           return new Graphic({
             geometry: new Point({
@@ -449,15 +514,26 @@
           });
         });
 
-        // 5. Add graphics to map layer
         exposedPointsGraphicsLayer.addMany(pointGraphics);
 
-        // 6. Update status text & auto-zoom view to point extent
         document.getElementById("stats").innerHTML = `Successfully plotted <b>${pointGraphics.length.toLocaleString()}</b> exposed assets on the map.`;
 
         if (pointGraphics.length > 0) {
           view.goTo(pointGraphics, { duration: 1000 });
         }
+      });
+
+      // Individual Opacity Controls for Wildfire Progression Views
+      document.getElementById("liveWildfireOpacity").addEventListener("input", (e) => {
+        liveWildfires.opacity = parseFloat(e.target.value);
+      });
+
+      document.getElementById("wildfire24hOpacity").addEventListener("input", (e) => {
+        wildfire24hGraphicsLayer.opacity = parseFloat(e.target.value);
+      });
+
+      document.getElementById("wildfire48hOpacity").addEventListener("input", (e) => {
+        wildfire48hGraphicsLayer.opacity = parseFloat(e.target.value);
       });
 
       // Target Scope Execution Trigger
@@ -585,7 +661,6 @@
       document.getElementById("clearBtn").addEventListener("click", () => {
         customPolygonGraphicsLayer.removeAll();
         exposedPointsGraphicsLayer.removeAll();
-        enrichedPropertiesForExport = [];
         lastExposedLocations = [];
 
         document.getElementById("summaryCard").style.display = "none";
@@ -597,19 +672,17 @@
       });
 
       document.getElementById("refreshLiveWildfireBtn").addEventListener("click", () => {
-        liveWildfires.refresh(); wildfires24h.refresh(); wildfires48h.refresh();
-        document.getElementById("stats").innerHTML = "Wildfire REST feeds re-queried and updated.";
+        liveWildfires.refresh(); 
+        manageRollingSnapshots(liveWildfires);
+        document.getElementById("stats").innerHTML = "Wildfire REST feeds re-queried and daily snapshots updated.";
       });
 
       document.getElementById("wildfireCheck").addEventListener("change", (e) => {
         const vis = e.target.checked;
-        liveWildfires.visible = vis; wildfires24h.visible = vis; wildfires48h.visible = vis;
+        liveWildfires.visible = vis; 
+        wildfire24hGraphicsLayer.visible = vis; 
+        wildfire48hGraphicsLayer.visible = vis;
         if(vis) { initializeAttributeTable(liveWildfires); }
-      });
-
-      document.getElementById("wildfireOpacity").addEventListener("input", (e) => {
-        const val = parseFloat(e.target.value);
-        liveWildfires.opacity = val; wildfires24h.opacity = val * 0.7; wildfires48h.opacity = val * 0.4;
       });
 
       document.getElementById("convectiveCheck").addEventListener("change", (e) => {
