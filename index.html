@@ -204,14 +204,6 @@
       // GraphicsLayer for Rendering Exposed Asset Point Markers
       const exposedPointsGraphicsLayer = new GraphicsLayer({ title: "Exposed Portfolio Assets" });
 
-      // Default Marker Symbol Standard
-      const pointSymbol = {
-        type: "simple-marker",
-        color: "#d9534f",
-        size: "9px",
-        outline: { color: "#ffffff", width: 1.5 }
-      };
-
       // Default Mock Portfolio Initialization (1,200 locations)
       function generateMockPortfolio() {
         const mockData = [];
@@ -421,25 +413,33 @@
         return exposed;
       }
 
-      // Direct GraphicsLayer Marker Renderer
+      // Direct, Simplified GraphicsLayer Marker Renderer
       document.getElementById("plotTopExposedBtn").addEventListener("click", () => {
         if (lastExposedLocations.length === 0) return;
 
-        // Clear existing drawn markers
+        // 1. Clear existing drawn markers
         exposedPointsGraphicsLayer.removeAll();
+        
+        // 2. Take top 1,000 exposed assets by TIV
         const top1000 = lastExposedLocations.slice(0, 1000);
 
-        // Construct graphics and project directly to Web Mercator viewport
-        const pointGraphics = top1000.map(loc => {
-          const geoPoint = new Point({
-            longitude: loc.longitude,
-            latitude: loc.latitude,
-            spatialReference: { wkid: 4326 }
-          });
-          const mapPoint = webMercatorUtils.geographicToWebMercator(geoPoint);
+        // 3. Define explicit point symbol styling
+        const pointSymbol = {
+          type: "simple-marker",
+          style: "circle",
+          color: "#e74c3c",
+          size: "10px",
+          outline: { color: "#ffffff", width: 1.5 }
+        };
 
+        // 4. Construct Graphic objects using pure WGS84 coordinates
+        const pointGraphics = top1000.map(loc => {
           return new Graphic({
-            geometry: mapPoint,
+            geometry: new Point({
+              longitude: loc.longitude,
+              latitude: loc.latitude,
+              spatialReference: { wkid: 4326 }
+            }),
             symbol: pointSymbol,
             attributes: loc,
             popupTemplate: {
@@ -449,15 +449,14 @@
           });
         });
 
-        // Add graphics to layer
+        // 5. Add graphics to map layer
         exposedPointsGraphicsLayer.addMany(pointGraphics);
 
+        // 6. Update status text & auto-zoom view to point extent
         document.getElementById("stats").innerHTML = `Successfully plotted <b>${pointGraphics.length.toLocaleString()}</b> exposed assets on the map.`;
 
-        // Automatically zoom viewport to extent of plotted points
         if (pointGraphics.length > 0) {
-          const pointsGeom = pointGraphics.map(g => g.geometry);
-          view.goTo(pointsGeom);
+          view.goTo(pointGraphics, { duration: 1000 });
         }
       });
 
